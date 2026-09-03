@@ -1,0 +1,12 @@
+[package]
+name = "raw-storage"
+version = "0.1.0"
+edition = "2021"
+description = "Low-level continuous memory storage abstraction crate for no_std and HPC environments."
+
+[features]
+default = []
+alloc = []
+verbose-errors = []
+
+[dependencies]
