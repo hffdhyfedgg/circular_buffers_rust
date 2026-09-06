@@ -7,6 +7,7 @@ description = "Low-level continuous memory storage abstraction crate for no_std 
 [features]
 default = []
 alloc = []
+std = ["alloc"]
 verbose-errors = []
 
 [dependencies]

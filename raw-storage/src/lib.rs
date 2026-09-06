@@ -12,6 +12,6 @@ pub use error::{Result, StorageError};
 pub use impls::{ArrayStorage, SliceStorage};
 #[cfg(feature = "alloc")]
 pub use impls::AllocStorage;
-pub use traits::{Storage, StorageMut};
+pub use traits::{Storage, StorageMut, VolatileStorage};
 #[cfg(feature = "alloc")]
 pub use traits::ResizableStorage;
