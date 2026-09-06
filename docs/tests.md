@@ -34,7 +34,7 @@ mod tests {
 
 ### 3.1. `raw-storage`
 * **Создание:** Проверка `ArrayStorage`, `SliceStorage`.
-* **Границы:** Проверка `capacity()` и корректности возврата `as_strided_view`.
+* **Границы:** Проверка `len()`, `is_empty()` и `capacity()`.
 * **Изменение:** Проверка записи через `StorageMut`.
 
 ### 3.2. `strided-mem`

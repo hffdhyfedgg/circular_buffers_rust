@@ -32,7 +32,7 @@ SIMD (Single Instruction, Multiple Data — выполнение одной ин
 
 Код библиотеки делится на три слоя:
 
-1. **Low-Level Unsafe Primitives (`StridedSliceMut<'a, T>`):**
+1. **Low-Level Unsafe Primitives (`StridedViewMut<'a, T>`):**
 Узкий, жестко протестированный слой, работающий с сырыми указателями (`NonNull<T>`) и шагами памяти (stride). Это **единственное место**, где разрешен `unsafe`.
 2. **Compile-Time Safety Layers (`SplitStrided` Trait):**
 Слой, проверяющий математические инварианты непересечения срезов на этапе компиляции с использованием Const Generics (констант времени компиляции).
@@ -87,7 +87,7 @@ std = ["alloc"]
 
 ### 3.2. Базовый низкоуровневый примитив: Strided-срез
 
-Все сложные операции разделения кольцевых буферов опираются на внутреннюю структуру `StridedSliceMut<'a, T>`, описывающую элементы в памяти, расположенные с постоянным шагом `stride`.
+Все сложные операции разделения кольцевых буферов опираются на внутреннюю структуру `StridedViewMut<'a, T>`, описывающую элементы в памяти, расположенные с постоянным шагом `stride`.
 
 ```rust
 use core::marker::PhantomData;
@@ -95,14 +95,14 @@ use core::ptr::NonNull;
 
 /// Мутабельный вид на элементы с постоянным шагом (stride).
 /// Является базовым строительным блоком для разнесения данных.
-pub struct StridedSliceMut<'a, T> {
+pub struct StridedViewMut<'a, T> {
     ptr: NonNull<T>,
     stride: usize,
     len: usize,
     _marker: PhantomData<&'a mut T>,
 }
 
-impl<'a, T> StridedSliceMut<'a, T> {
+impl<'a, T> StridedViewMut<'a, T> {
     /// # Safety
     /// Вызывающий код обязан гарантировать, что диапазон памяти
     /// `[ptr + i * stride]` не перекрывается ни с какими другими активными ссылками.
@@ -128,8 +128,8 @@ impl<'a, T> StridedSliceMut<'a, T> {
 }
 
 // Гарантируем возможность безопасной передачи вида между потоками (HPC / Multithreading)
-unsafe impl<'a, T: Send> Send for StridedSliceMut<'a, T> {}
-unsafe impl<'a, T: Sync> Sync for StridedSliceMut<'a, T> {}
+unsafe impl<'a, T: Send> Send for StridedViewMut<'a, T> {}
+unsafe impl<'a, T: Sync> Sync for StridedViewMut<'a, T> {}
 ```
 
 > **Правило оптимизации кольцевой индексации (Ring Indexing Rule):**
@@ -143,11 +143,11 @@ unsafe impl<'a, T: Sync> Sync for StridedSliceMut<'a, T> {}
 
 ```rust
 pub trait SplitStrided<'a, T> {
-    fn split_strided<const STRIDE: usize>(self) -> [StridedSliceMut<'a, T>; STRIDE];
+    fn split_strided<const STRIDE: usize>(self) -> [StridedViewMut<'a, T>; STRIDE];
 }
 
 impl<'a, T> SplitStrided<'a, T> for &'a mut [T] {
-    fn split_strided<const STRIDE: usize>(self) -> [StridedSliceMut<'a, T>; STRIDE] {
+    fn split_strided<const STRIDE: usize>(self) -> [StridedViewMut<'a, T>; STRIDE] {
         // Современный идиоматичный способ проверки на этапе компиляции
         const { assert!(STRIDE > 0, "Stride must be greater than zero") };
 
@@ -163,7 +163,7 @@ impl<'a, T> SplitStrided<'a, T> for &'a mut [T] {
 
             unsafe {
                 let start_ptr = NonNull::new_unchecked(base_ptr.as_ptr().add(offset));
-                StridedSliceMut::new_unchecked(start_ptr, STRIDE, sub_len)
+                StridedViewMut::new_unchecked(start_ptr, STRIDE, sub_len)
             }
         })
     }
@@ -216,7 +216,7 @@ pub struct ParticleSoAStorage<const N: usize> {
 * Выделить математическое ядро алгоритма отдельно от индексации ring-буфера.
 
 2. **Выбор абстракции:**
-* Если функция производит векторизованные вычисления — принимать срезы `&[T]` / `&mut [T]` или `StridedSliceMut<'a, T>`.
+* Если функция производит векторизованные вычисления — принимать срезы `&[T]` / `&mut [T]` или `StridedViewMut<'a, T>`.
 * Если функция управляет состоянием кольца — оборачивать вычисления в методы высших RingBuffer-структур.
 
 3. **Проверка Zero-Cost:**
@@ -231,10 +231,10 @@ pub struct ParticleSoAStorage<const N: usize> {
 
 1. **Анализ памяти:** Является ли функция чисто математической (работает со срезами `&[T]`) или она управляет состоянием кольца (`head`/`tail`)?
 2. **Выбор примитива:**
-   * Для линейных математических ядер используй `&mut [T]` или `StridedSliceMut`.
+   * Для линейных математических ядер используй `&mut [T]` или `StridedViewMut`.
    * Для управления очередью используй `RingBufferView` с `AtomicUsize`.
 3. **Инвариант ёмкости:** Если функция использует кольцевую индексацию, замени `% Capacity` на `& (Capacity - 1)`. Убедись, что `Capacity` всегда степень двойки.
-4. **Граница `unsafe`:** Помни, что `unsafe` разрешен ТОЛЬКО внутри `StridedSliceMut::new_unchecked` и `split_at_offsets`. Любая математика индексов в вышестоящих структурах (`RingBuffer`, `SoA`) должна быть на 100% безопасной (Safe Rust) и использовать `debug_assert!` для проверки границ.
+4. **Граница `unsafe`:** Помни, что `unsafe` разрешен ТОЛЬКО внутри `StridedViewMut::new_unchecked` и `split_at_offsets`. Любая математика индексов в вышестоящих структурах (`RingBuffer`, `SoA`) должна быть на 100% безопасной (Safe Rust) и использовать `debug_assert!` для проверки границ.
 5. **Отсутствие скрытых аллокаций:** Запрещено использовать `Vec`, `String`, `Box` или `.collect::<Vec<_>>()`. Все итераторы и коллекции должны быть ленивыми (Lazy) или опираться на стековую память (`[T; N]`) и внешние аллокаторы.
 
 ---
