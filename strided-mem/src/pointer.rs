@@ -1,23 +1,13 @@
 use core::ptr::NonNull;
 
-/// Calculates element pointer with stride offset.
+/// Computes the pointer offset for an element at `index` given a constant `stride`.
 ///
 /// # Safety
 ///
-/// Caller must ensure that `ptr` points to valid memory and that offset `index * stride`
-/// stays within allocated memory bounds without aliasing violations.
+/// The caller must guarantee that `ptr` points to a valid allocation and that
+/// `index * stride` does not overflow or access memory outside the allocation bounds.
 #[inline(always)]
-pub(crate) unsafe fn offset_ptr<T>(ptr: NonNull<T>, index: usize, stride: usize) -> *mut T {
-    let offset = index
-        .checked_mul(stride)
-        .expect("stride index multiplication overflowed usize");
-
-    debug_assert!(
-        offset
-            .checked_mul(core::mem::size_of::<T>())
-            .map_or(false, |byte_offset| byte_offset <= isize::MAX as usize),
-        "offset in bytes exceeds isize::MAX"
-    );
-
-    ptr.as_ptr().add(offset)
+pub unsafe fn offset_ptr<T>(ptr: NonNull<T>, stride: usize, index: usize) -> NonNull<T> {
+    // SAFETY: The caller guarantees that ptr + index * stride is within bounds of the allocated buffer.
+    unsafe { NonNull::new_unchecked(ptr.as_ptr().add(index * stride)) }
 }

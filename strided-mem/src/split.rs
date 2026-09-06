@@ -1,182 +1,69 @@
-use core::marker::PhantomData;
 use core::ptr::NonNull;
 
-use crate::error::{Result, StridedError};
 use crate::pointer::offset_ptr;
-use crate::views::StridedViewMut;
+use crate::views::{StridedView, StridedViewMut};
 
-/// Lazy iterator splitting memory into strided mutable views on the fly (Approach A).
-#[derive(Debug)]
-pub struct StridedSplitIter<'a, T> {
-    base_ptr: NonNull<T>,
-    base_stride: usize,
-    total_len: usize,
-    n: usize,
-    current_i: usize,
-    _marker: PhantomData<&'a mut T>,
-}
-
-impl<'a, T> StridedSplitIter<'a, T> {
-    pub(crate) fn new(base_ptr: NonNull<T>, base_stride: usize, total_len: usize, n: usize) -> Self {
-        Self {
-            base_ptr,
-            base_stride,
-            total_len,
-            n,
-            current_i: 0,
-            _marker: PhantomData,
-        }
-    }
-}
-
-impl<'a, T> Iterator for StridedSplitIter<'a, T> {
-    type Item = StridedViewMut<'a, T>;
-
-    #[inline(always)]
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.n == 0 || self.current_i >= self.n {
-            None
-        } else {
-            let i = self.current_i;
-            self.current_i += 1;
-            let new_stride = self.base_stride.checked_mul(self.n)?;
-            let sub_len = self.total_len.checked_sub(i).map_or(0, |rem| rem.div_ceil(self.n));
-            unsafe {
-                let start_ptr = NonNull::new_unchecked(offset_ptr(self.base_ptr, i, self.base_stride));
-                Some(StridedViewMut::new_unchecked(start_ptr, new_stride, sub_len))
-            }
-        }
-    }
-
-    #[inline(always)]
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        if self.n == 0 || self.current_i >= self.n {
-            (0, Some(0))
-        } else {
-            let rem = self.n - self.current_i;
-            (rem, Some(rem))
-        }
-    }
-}
-
-impl<'a, T> ExactSizeIterator for StridedSplitIter<'a, T> {
-    #[inline(always)]
-    fn len(&self) -> usize {
-        if self.n == 0 || self.current_i >= self.n {
-            0
-        } else {
-            self.n - self.current_i
-        }
-    }
-}
-
-/// Trait for strided splitting of continuous mutable memory buffers and strided views.
-pub trait SplitStrided<'a, T> {
-    /// Attempts to split the memory into `N` strided mutable views.
+impl<'a, T> StridedViewMut<'a, T> {
+    /// Splits a mutable strided view into `N` disjoint mutable sub-views.
     ///
-    /// # Errors
+    /// # Math & Soundness
     ///
-    /// Returns [`StridedError::ZeroStride`] if `N == 0`, or [`StridedError::Overflow`] if stride multiplication overflows `usize`.
-    fn try_split_strided<const N: usize>(self) -> Result<[StridedViewMut<'a, T>; N]>;
+    /// Sub-view `i` ($0 \le i < N$) contains elements at original indices $i + k \cdot N$.
+    /// Since $i_1 \not\equiv i_2 \pmod N$ for distinct $i_1, i_2 < N$, the set of memory
+    /// locations accessed by each sub-view is strictly disjoint. No two sub-views can
+    /// alias the same memory location, preserving Rust's exclusive mutability invariants.
+    #[inline]
+    pub fn split_strided<const N: usize>(self) -> [StridedViewMut<'a, T>; N] {
+        const { assert!(N > 0, "Stride/split count N must be greater than zero") };
 
-    /// Splitting method wrapper over `try_split_strided`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `N == 0` or if stride multiplication overflows `usize`.
-    fn split_strided<const N: usize>(self) -> [StridedViewMut<'a, T>; N]
-    where
-        Self: Sized,
-    {
-        debug_assert!(N > 0, "N must be greater than zero");
-        self.try_split_strided::<N>().expect("split_strided failed")
-    }
+        let len = self.len();
+        let stride = self.stride();
+        let ptr = unsafe { NonNull::new_unchecked(self.as_ptr() as *mut T) };
+        let new_stride = stride * N;
 
-    /// Creates a lazy iterator over `n` strided sub-views (Approach A).
-    fn split_strided_iter(self, n: usize) -> StridedSplitIter<'a, T>;
-
-    /// Splits the memory into up to `MAX_N` sub-views on the stack (Approach B).
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StridedError::OutOfBounds`] if `n > MAX_N`.
-    fn split_bounded<const MAX_N: usize>(
-        self,
-        n: usize,
-    ) -> Result<([StridedViewMut<'a, T>; MAX_N], usize)>;
-}
-
-impl<'a, T> SplitStrided<'a, T> for &'a mut [T] {
-    fn try_split_strided<const N: usize>(self) -> Result<[StridedViewMut<'a, T>; N]> {
-        if N == 0 {
-            return Err(StridedError::ZeroStride);
-        }
-
-        let total_len = self.len();
-        let base_ptr = unsafe { NonNull::new_unchecked(self.as_mut_ptr()) };
-        let base_stride = 1;
-        let new_stride = N;
-
-        let views = core::array::from_fn(|i| {
-            let sub_len = total_len.checked_sub(i).map_or(0, |rem| rem.div_ceil(N));
-            unsafe {
-                let start_ptr = NonNull::new_unchecked(offset_ptr(base_ptr, i, base_stride));
-                StridedViewMut::new_unchecked(start_ptr, new_stride, sub_len)
-            }
-        });
-
-        Ok(views)
-    }
-
-    fn split_strided_iter(self, n: usize) -> StridedSplitIter<'a, T> {
-        let total_len = self.len();
-        let base_ptr = unsafe { NonNull::new_unchecked(self.as_mut_ptr()) };
-        StridedSplitIter::new(base_ptr, 1, total_len, n)
-    }
-
-    fn split_bounded<const MAX_N: usize>(
-        self,
-        n: usize,
-    ) -> Result<([StridedViewMut<'a, T>; MAX_N], usize)> {
-        if n > MAX_N {
-            #[cfg(feature = "verbose-errors")]
-            {
-                return Err(StridedError::OutOfBounds {
-                    requested: n,
-                    max: MAX_N,
-                });
-            }
-            #[cfg(not(feature = "verbose-errors"))]
-            {
-                return Err(StridedError::OutOfBounds);
-            }
-        }
-
-        let total_len = self.len();
-        let base_ptr = unsafe { NonNull::new_unchecked(self.as_mut_ptr()) };
-
-        if n == 0 {
-            let arr = core::array::from_fn(|_| unsafe {
-                StridedViewMut::new_unchecked(base_ptr, 1, 0)
-            });
-            return Ok((arr, 0));
-        }
-
-        let new_stride = n;
-
-        let arr = core::array::from_fn(|i| {
-            if i < n {
-                let sub_len = total_len.checked_sub(i).map_or(0, |rem| rem.div_ceil(n));
+        core::array::from_fn(|i| {
+            if len > i {
+                let sub_len = (len - i + N - 1) / N;
+                // SAFETY:
+                // 1. i < len, so offset_ptr(ptr, stride, i) is within the original view's allocated range.
+                // 2. Each sub-view accesses elements at indices i + k * N. Since distinct i values are
+                //    in distinct residue classes modulo N, elements accessed by different sub-views are disjoint.
                 unsafe {
-                    let start_ptr = NonNull::new_unchecked(offset_ptr(base_ptr, i, 1));
-                    StridedViewMut::new_unchecked(start_ptr, new_stride, sub_len)
+                    let sub_ptr = offset_ptr(ptr, stride, i);
+                    StridedViewMut::new_unchecked(sub_ptr, new_stride, sub_len)
                 }
             } else {
-                unsafe { StridedViewMut::new_unchecked(base_ptr, new_stride, 0) }
+                // SAFETY: sub_len is 0, so no memory will ever be accessed.
+                unsafe { StridedViewMut::new_unchecked(ptr, new_stride, 0) }
             }
-        });
+        })
+    }
+}
 
-        Ok((arr, n))
+impl<'a, T> StridedView<'a, T> {
+    /// Splits an immutable strided view into `N` disjoint immutable sub-views.
+    #[inline]
+    pub fn split_strided<const N: usize>(self) -> [StridedView<'a, T>; N] {
+        const { assert!(N > 0, "Stride/split count N must be greater than zero") };
+
+        let len = self.len();
+        let stride = self.stride();
+        let ptr = unsafe { NonNull::new_unchecked(self.as_ptr() as *mut T) };
+        let new_stride = stride * N;
+
+        core::array::from_fn(|i| {
+            if len > i {
+                let sub_len = (len - i + N - 1) / N;
+                // SAFETY: Elements accessed by sub-view i are a subset of the valid original view.
+                unsafe {
+                    let sub_ptr = offset_ptr(ptr, stride, i);
+                    StridedView::new_unchecked(sub_ptr, new_stride, sub_len)
+                }
+            } else {
+                // SAFETY: sub_len is 0, so no memory will ever be accessed.
+                unsafe { StridedView::new_unchecked(ptr, new_stride, 0) }
+            }
+        })
     }
 }
 
@@ -185,154 +72,74 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_try_split_strided_basic() {
-        let mut data = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
-        let [mut v0, mut v1, mut v2] = data.try_split_strided::<3>().unwrap();
-
-        assert_eq!(v0.len(), 4);
-        assert_eq!(v1.len(), 3);
-        assert_eq!(v2.len(), 3);
-
-        v0[0] = 100;
-        v1[0] = 101;
-        v2[0] = 102;
-
-        assert_eq!(data[0], 100);
-        assert_eq!(data[1], 101);
-        assert_eq!(data[2], 102);
-    }
-
-    #[test]
-    fn test_try_split_strided_overflow_and_near_max() {
-        let mut data = [1, 2, 3];
-        let ptr = NonNull::new(data.as_mut_ptr()).unwrap();
-        let huge_stride = usize::MAX / 2 + 10;
-        let view_mut = unsafe { StridedViewMut::new_unchecked(ptr, huge_stride, 2) };
-
-        let res = view_mut.try_split_strided::<2>();
-        assert!(res.is_err());
-        assert_eq!(res.unwrap_err(), StridedError::Overflow);
-    }
-
-    #[test]
-    fn test_split_strided_iter() {
-        let mut data = [0, 1, 2, 3, 4, 5, 6, 7];
-        let mut split_iter = data.split_strided_iter(3);
-
-        assert_eq!(split_iter.len(), 3);
-
-        let mut v0 = split_iter.next().unwrap();
-        let mut v1 = split_iter.next().unwrap();
-        let mut v2 = split_iter.next().unwrap();
-
-        assert!(split_iter.next().is_none());
-
-        assert_eq!(v0.len(), 3);
-        assert_eq!(v1.len(), 3);
-        assert_eq!(v2.len(), 2);
-
-        v0[0] = 90;
-        v1[0] = 91;
-        v2[0] = 92;
-
-        assert_eq!(data[0], 90);
-        assert_eq!(data[1], 91);
-        assert_eq!(data[2], 92);
-    }
-
-    #[test]
-    fn test_split_bounded() {
+    fn test_split_strided_even_odd() {
         let mut data = [10, 20, 30, 40, 50];
+        let view = StridedViewMut::from_mut_slice(&mut data);
 
-        let (views, n) = data.as_mut_slice().split_bounded::<4>(3).unwrap();
-        assert_eq!(n, 3);
-        assert_eq!(views[0].len(), 2);
-        assert_eq!(views[1].len(), 2);
-        assert_eq!(views[2].len(), 1);
-        assert_eq!(views[3].len(), 0);
+        let [mut even, mut odd] = view.split_strided::<2>();
 
-        let mut data2 = [1, 2, 3];
-        let err_res = data2.as_mut_slice().split_bounded::<2>(3);
-        assert!(err_res.is_err());
-        #[cfg(feature = "verbose-errors")]
-        assert!(matches!(err_res.unwrap_err(), StridedError::OutOfBounds { .. }));
-        #[cfg(not(feature = "verbose-errors"))]
-        assert_eq!(err_res.unwrap_err(), StridedError::OutOfBounds);
-    }
-}
+        assert_eq!(even.len(), 3); // indices 0, 2, 4 (elements 10, 30, 50)
+        assert_eq!(odd.len(), 2);  // indices 1, 3    (elements 20, 40)
+        assert_eq!(even.len() + odd.len(), 5);
 
-impl<'a, T> SplitStrided<'a, T> for StridedViewMut<'a, T> {
-    fn try_split_strided<const N: usize>(self) -> Result<[StridedViewMut<'a, T>; N]> {
-        if N == 0 {
-            return Err(StridedError::ZeroStride);
+        assert_eq!(even.get(0), Some(&10));
+        assert_eq!(even.get(1), Some(&30));
+        assert_eq!(even.get(2), Some(&50));
+        assert_eq!(even.get(3), None);
+
+        assert_eq!(odd.get(0), Some(&20));
+        assert_eq!(odd.get(1), Some(&40));
+        assert_eq!(odd.get(2), None);
+
+        // Mutate even subview element
+        if let Some(v) = even.get_mut(1) {
+            *v = 300;
         }
 
-        let total_len = self.len();
-        let base_stride = self.stride();
-        let base_ptr = self.as_ptr_non_null();
-        let new_stride = base_stride.checked_mul(N).ok_or(StridedError::Overflow)?;
-
-        let views = core::array::from_fn(|i| {
-            let sub_len = total_len.checked_sub(i).map_or(0, |rem| rem.div_ceil(N));
-            unsafe {
-                let start_ptr = NonNull::new_unchecked(offset_ptr(base_ptr, i, base_stride));
-                StridedViewMut::new_unchecked(start_ptr, new_stride, sub_len)
-            }
-        });
-
-        Ok(views)
-    }
-
-    fn split_strided_iter(self, n: usize) -> StridedSplitIter<'a, T> {
-        let total_len = self.len();
-        let base_stride = self.stride();
-        let base_ptr = self.as_ptr_non_null();
-        StridedSplitIter::new(base_ptr, base_stride, total_len, n)
-    }
-
-    fn split_bounded<const MAX_N: usize>(
-        self,
-        n: usize,
-    ) -> Result<([StridedViewMut<'a, T>; MAX_N], usize)> {
-        if n > MAX_N {
-            #[cfg(feature = "verbose-errors")]
-            {
-                return Err(StridedError::OutOfBounds {
-                    requested: n,
-                    max: MAX_N,
-                });
-            }
-            #[cfg(not(feature = "verbose-errors"))]
-            {
-                return Err(StridedError::OutOfBounds);
-            }
+        // Mutate odd subview element
+        if let Some(v) = odd.get_mut(0) {
+            *v = 200;
         }
 
-        let total_len = self.len();
-        let base_stride = self.stride();
-        let base_ptr = self.as_ptr_non_null();
+        assert_eq!(data, [10, 200, 300, 40, 50]);
+    }
 
-        if n == 0 {
-            let arr = core::array::from_fn(|_| unsafe {
-                StridedViewMut::new_unchecked(base_ptr, base_stride, 0)
-            });
-            return Ok((arr, 0));
-        }
+    #[test]
+    fn test_split_strided_by_three() {
+        let mut data = [1, 2, 3, 4, 5, 6, 7];
+        let view = StridedViewMut::from_mut_slice(&mut data);
 
-        let new_stride = base_stride.checked_mul(n).ok_or(StridedError::Overflow)?;
+        let [v0, v1, v2] = view.split_strided::<3>();
 
-        let arr = core::array::from_fn(|i| {
-            if i < n {
-                let sub_len = total_len.checked_sub(i).map_or(0, |rem| rem.div_ceil(n));
-                unsafe {
-                    let start_ptr = NonNull::new_unchecked(offset_ptr(base_ptr, i, base_stride));
-                    StridedViewMut::new_unchecked(start_ptr, new_stride, sub_len)
-                }
-            } else {
-                unsafe { StridedViewMut::new_unchecked(base_ptr, new_stride, 0) }
-            }
-        });
+        assert_eq!(v0.len(), 3); // 1, 4, 7
+        assert_eq!(v1.len(), 2); // 2, 5
+        assert_eq!(v2.len(), 2); // 3, 6
+        assert_eq!(v0.len() + v1.len() + v2.len(), 7);
 
-        Ok((arr, n))
+        assert_eq!(v0.get(0), Some(&1));
+        assert_eq!(v0.get(1), Some(&4));
+        assert_eq!(v0.get(2), Some(&7));
+
+        assert_eq!(v1.get(0), Some(&2));
+        assert_eq!(v1.get(1), Some(&5));
+
+        assert_eq!(v2.get(0), Some(&3));
+        assert_eq!(v2.get(1), Some(&6));
+    }
+
+    #[test]
+    fn test_split_strided_short_len() {
+        let mut data = [100, 200];
+        let view = StridedViewMut::from_mut_slice(&mut data);
+
+        let [v0, v1, v2] = view.split_strided::<3>();
+
+        assert_eq!(v0.len(), 1); // 100
+        assert_eq!(v1.len(), 1); // 200
+        assert_eq!(v2.len(), 0); // empty
+
+        assert_eq!(v0.get(0), Some(&100));
+        assert_eq!(v1.get(0), Some(&200));
+        assert_eq!(v2.get(0), None);
     }
 }

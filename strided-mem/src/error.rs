@@ -4,56 +4,63 @@ use core::fmt;
 #[cfg(feature = "verbose-errors")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StridedError {
-    /// Requested index or range is out of memory bounds.
-    OutOfBounds { requested: usize, max: usize },
-    /// Stride value cannot be zero.
+    /// Stride must be greater than zero.
     ZeroStride,
-    /// Overlapping indices were detected during view splitting.
-    OverlapDetected { index: usize },
-    /// Pointer or length calculation overflowed usize.
-    Overflow,
+    /// Memory overlap detected between strided views.
+    OverlapDetected {
+        /// Base offset 1.
+        offset1: usize,
+        /// Base offset 2.
+        offset2: usize,
+    },
+    /// Index or offset out of bounds.
+    OutOfBounds {
+        /// Attempted index.
+        index: usize,
+        /// Maximum length.
+        len: usize,
+    },
+    /// Encountered a null or unaligned pointer.
+    NullPointer,
 }
 
 /// Errors that can occur during strided memory operations.
 #[cfg(not(feature = "verbose-errors"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StridedError {
-    /// Requested index or range is out of memory bounds.
-    OutOfBounds,
-    /// Stride value cannot be zero.
+    /// Stride must be greater than zero.
     ZeroStride,
-    /// Overlapping indices were detected during view splitting.
+    /// Memory overlap detected between strided views.
     OverlapDetected,
-    /// Pointer or length calculation overflowed usize.
-    Overflow,
+    /// Index or offset out of bounds.
+    OutOfBounds,
+    /// Encountered a null or unaligned pointer.
+    NullPointer,
 }
 
 impl fmt::Display for StridedError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             #[cfg(feature = "verbose-errors")]
-            StridedError::OutOfBounds { requested, max } => {
-                write!(f, "out of bounds: requested {}, max {}", requested, max)
-            }
-            #[cfg(not(feature = "verbose-errors"))]
-            StridedError::OutOfBounds => write!(f, "out of bounds"),
-
-            #[cfg(feature = "verbose-errors")]
             StridedError::ZeroStride => write!(f, "stride must be greater than zero"),
             #[cfg(not(feature = "verbose-errors"))]
             StridedError::ZeroStride => write!(f, "zero stride"),
 
             #[cfg(feature = "verbose-errors")]
-            StridedError::OverlapDetected { index } => {
-                write!(f, "overlap detected at index {}", index)
+            StridedError::OverlapDetected { offset1, offset2 } => {
+                write!(f, "memory overlap detected between offsets {} and {}", offset1, offset2)
             }
             #[cfg(not(feature = "verbose-errors"))]
             StridedError::OverlapDetected => write!(f, "overlap detected"),
 
             #[cfg(feature = "verbose-errors")]
-            StridedError::Overflow => write!(f, "arithmetic overflow in stride computation"),
+            StridedError::OutOfBounds { index, len } => {
+                write!(f, "index {} out of bounds for strided view of length {}", index, len)
+            }
             #[cfg(not(feature = "verbose-errors"))]
-            StridedError::Overflow => write!(f, "stride overflow"),
+            StridedError::OutOfBounds => write!(f, "out of bounds"),
+
+            StridedError::NullPointer => write!(f, "null pointer"),
         }
     }
 }
@@ -73,14 +80,17 @@ mod tests {
     fn test_error_display() {
         #[cfg(feature = "verbose-errors")]
         {
-            let err = StridedError::OutOfBounds { requested: 10, max: 5 };
-            assert!(format!("{}", err).contains("10"));
+            let err = StridedError::OutOfBounds { index: 10, len: 5 };
+            let s = format!("{}", err);
+            assert!(s.contains("10"));
+            assert!(s.contains("5"));
         }
 
         #[cfg(not(feature = "verbose-errors"))]
         {
             let err = StridedError::OutOfBounds;
-            assert_eq!(format!("{}", err), "out of bounds");
+            let s = format!("{}", err);
+            assert_eq!(s, "out of bounds");
         }
     }
 }
