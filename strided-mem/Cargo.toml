@@ -1,6 +1,13 @@
 [package]
 name = "strided-mem"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "Strided memory geometry, views, pointer arithmetic, and compile-time safe splitting."
+
+[features]
+default = []
+alloc = ["raw-storage/alloc"]
+verbose-errors = ["raw-storage/verbose-errors"]
 
 [dependencies]
+raw-storage = { path = "../raw-storage", default-features = false }
