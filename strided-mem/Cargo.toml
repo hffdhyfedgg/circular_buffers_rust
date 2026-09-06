@@ -1,6 +1,13 @@
 [package]
 name = "strided-mem"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "Strided memory geometry, views, and safe zero-cost splitting abstractions for no_std."
+
+[features]
+default = []
+alloc = []
+std = ["alloc"]
+verbose-errors = []
 
 [dependencies]

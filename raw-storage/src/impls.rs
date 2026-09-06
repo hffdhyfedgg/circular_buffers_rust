@@ -53,6 +53,11 @@ impl<T, const N: usize> Storage for ArrayStorage<T, N> {
     type Item = T;
 
     #[inline]
+    fn len(&self) -> usize {
+        N
+    }
+
+    #[inline]
     fn capacity(&self) -> usize {
         N
     }
@@ -94,6 +99,11 @@ impl<'a, T> From<&'a mut [T]> for SliceStorage<'a, T> {
 
 impl<'a, T> Storage for SliceStorage<'a, T> {
     type Item = T;
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.slice.len()
+    }
 
     #[inline]
     fn capacity(&self) -> usize {
@@ -176,8 +186,13 @@ impl<T> Storage for AllocStorage<T> {
     type Item = T;
 
     #[inline]
-    fn capacity(&self) -> usize {
+    fn len(&self) -> usize {
         self.buf.len()
+    }
+
+    #[inline]
+    fn capacity(&self) -> usize {
+        self.buf.capacity()
     }
 
     #[inline]
@@ -233,8 +248,15 @@ mod tests {
     #[test]
     fn test_array_storage_init_and_access() {
         let storage = ArrayStorage::new([1, 2, 3, 4]);
+        assert_eq!(storage.len(), 4);
+        assert!(!storage.is_empty());
         assert_eq!(storage.capacity(), 4);
         assert_eq!(storage.as_slice(), &[1, 2, 3, 4]);
+
+        let empty_storage = ArrayStorage::new([0i32; 0]);
+        assert_eq!(empty_storage.len(), 0);
+        assert!(empty_storage.is_empty());
+        assert_eq!(empty_storage.capacity(), 0);
     }
 
     #[test]
@@ -261,6 +283,8 @@ mod tests {
         let mut buf = [1, 2, 3, 4, 5];
         {
             let mut storage = SliceStorage::new(&mut buf);
+            assert_eq!(storage.len(), 5);
+            assert!(!storage.is_empty());
             assert_eq!(storage.capacity(), 5);
             assert_eq!(storage.as_slice(), &[1, 2, 3, 4, 5]);
 
@@ -273,7 +297,9 @@ mod tests {
     #[test]
     fn test_alloc_storage_operations() {
         let mut storage = AllocStorage::with_capacity(3);
-        assert_eq!(storage.capacity(), 3);
+        assert_eq!(storage.len(), 3);
+        assert!(!storage.is_empty());
+        assert!(storage.capacity() >= 3);
         assert_eq!(storage.as_slice(), &[0, 0, 0]);
 
         storage.as_mut_slice()[0] = 10;
@@ -283,17 +309,18 @@ mod tests {
 
         // Grow storage
         assert!(storage.try_resize(5).is_ok());
-        assert_eq!(storage.capacity(), 5);
+        assert_eq!(storage.len(), 5);
+        assert!(storage.capacity() >= 5);
         assert_eq!(storage.as_slice(), &[10, 20, 30, 0, 0]);
 
         // Shrink storage
         assert!(storage.try_resize(2).is_ok());
-        assert_eq!(storage.capacity(), 2);
+        assert_eq!(storage.len(), 2);
         assert_eq!(storage.as_slice(), &[10, 20]);
 
         // Resize to same capacity
         assert!(storage.try_resize(2).is_ok());
-        assert_eq!(storage.capacity(), 2);
+        assert_eq!(storage.len(), 2);
     }
 
     #[cfg(feature = "alloc")]
