@@ -39,8 +39,8 @@ impl<'a, T> Iterator for StridedIter<'a, T> {
             self.front_index += 1;
             self.len -= 1;
             unsafe {
-                let elem_ptr = offset_ptr(self.ptr, current, self.stride);
-                Some(&*elem_ptr)
+                let elem_ptr = offset_ptr(self.ptr, self.stride, current);
+                Some(&*elem_ptr.as_ptr())
             }
         }
     }
@@ -60,8 +60,8 @@ impl<'a, T> DoubleEndedIterator for StridedIter<'a, T> {
             self.len -= 1;
             let target_idx = self.front_index + self.len;
             unsafe {
-                let elem_ptr = offset_ptr(self.ptr, target_idx, self.stride);
-                Some(&*elem_ptr)
+                let elem_ptr = offset_ptr(self.ptr, self.stride, target_idx);
+                Some(&*elem_ptr.as_ptr())
             }
         }
     }
@@ -111,8 +111,8 @@ impl<'a, T> Iterator for StridedIterMut<'a, T> {
             self.front_index += 1;
             self.len -= 1;
             unsafe {
-                let elem_ptr = offset_ptr(self.ptr, current, self.stride);
-                Some(&mut *elem_ptr)
+                let elem_ptr = offset_ptr(self.ptr, self.stride, current);
+                Some(&mut *elem_ptr.as_ptr())
             }
         }
     }
@@ -132,8 +132,8 @@ impl<'a, T> DoubleEndedIterator for StridedIterMut<'a, T> {
             self.len -= 1;
             let target_idx = self.front_index + self.len;
             unsafe {
-                let elem_ptr = offset_ptr(self.ptr, target_idx, self.stride);
-                Some(&mut *elem_ptr)
+                let elem_ptr = offset_ptr(self.ptr, self.stride, target_idx);
+                Some(&mut *elem_ptr.as_ptr())
             }
         }
     }
