@@ -74,6 +74,13 @@ impl<T, S: StorageMut<Item = T>> FilterBank<T, S> {
 
     /// Applies filter `filter_idx` to input sequence `input` using purely iterative inner loop.
     ///
+    /// # FIR Convolution Order
+    ///
+    /// `input` must yield elements in newest-first order ($x_0 = x_{\text{newest}}, x_1 = x_{\text{newest}-1}, \dots$),
+    /// evaluating the causal FIR filter formula:
+    ///
+    /// $$y = \sum_{i=0}^{N-1} h_i \cdot x_{\text{newest}-i}$$
+    ///
     /// # Errors
     /// Returns [`RingBufError::ChannelOutOfBounds`] if `filter_idx >= num_filters`.
     pub fn filter_signal<'a>(
@@ -122,6 +129,10 @@ impl<T, S: StorageMut<Item = T>> FilterBank<T, S> {
 mod tests {
     use super::*;
     use raw_storage::impls::ArrayStorage;
+    use crate::cbuf::CBuf;
+    use crate::cbuf2n::CBuf2N;
+    use crate::stack::CBufStack;
+    use crate::tail::CBufTail;
     use crate::view2n::CBuf2NViewMut;
 
     #[test]
@@ -145,14 +156,56 @@ mod tests {
         view.push(20.0);
         view.push(30.0);
 
-        let res0 = fb.filter_signal(0, &view).unwrap();
-        // view logical: [10.0, 20.0, 30.0]
+        // FIR convolution order (newest first):
+        // newest = 30.0 (rel 0), 20.0 (rel 1), oldest = 10.0 (rel 2)
         // coeffs 0: [1.0, 2.0, 3.0]
-        // 10*1 + 20*2 + 30*3 = 140
-        assert_eq!(res0, 140.0);
+        // y = 1.0 * 30.0 + 2.0 * 20.0 + 3.0 * 10.0 = 30 + 40 + 30 = 100.0
+        let res0 = fb.filter_signal(0, view.iter_newest_first()).unwrap();
+        assert_eq!(res0, 100.0);
 
         fb.scale_filter_bank(2.0);
-        let res0_scaled = fb.filter_signal(0, &view).unwrap();
-        assert_eq!(res0_scaled, 280.0);
+        let res0_scaled = fb.filter_signal(0, view.iter_newest_first()).unwrap();
+        assert_eq!(res0_scaled, 200.0);
+    }
+
+    #[test]
+    fn test_filter_signal_across_buffer_types() {
+        let storage = ArrayStorage::<f32, 3>::default();
+        let mut fb = FilterBank::try_new(storage, 1, 3).unwrap();
+        fb.filter_coefficients_mut(0).unwrap().copy_from_slice(&[1.0, 0.5, 0.25]);
+
+        // CBuf
+        let mut cbuf = CBuf::try_new(ArrayStorage::<f32, 3>::default()).unwrap();
+        cbuf.push(10.0);
+        cbuf.push(20.0);
+        cbuf.push(40.0); // newest: 40, rel 1: 20, rel 2: 10
+        // y = 1.0*40 + 0.5*20 + 0.25*10 = 40 + 10 + 2.5 = 52.5
+        let res_cbuf = fb.filter_signal(0, cbuf.iter_newest_first()).unwrap();
+        assert_eq!(res_cbuf, 52.5);
+
+        // CBuf2N
+        let mut cbuf2n = CBuf2N::try_new(ArrayStorage::<f32, 4>::default()).unwrap();
+        cbuf2n.push(10.0);
+        cbuf2n.push(20.0);
+        cbuf2n.push(40.0);
+        let res_cbuf2n = fb.filter_signal(0, cbuf2n.iter_newest_first()).unwrap();
+        assert_eq!(res_cbuf2n, 52.5);
+
+        // CBufTail
+        let mut tail_buf = CBufTail::try_new(ArrayStorage::<f32, 4>::default(), 1).unwrap();
+        tail_buf.push(5.0);  // truncated by tail_len = 1
+        tail_buf.push(10.0);
+        tail_buf.push(20.0);
+        tail_buf.push(40.0); // newest: 40, rel 1: 20, rel 2: 10
+        let res_tail = fb.filter_signal(0, tail_buf.iter_newest_first()).unwrap();
+        assert_eq!(res_tail, 52.5);
+
+        // CBufStack
+        let mut stack = CBufStack::try_new(ArrayStorage::<f32, 6>::default(), 2, 3).unwrap();
+        stack.push_all(&[10.0, 0.0]);
+        stack.push_all(&[20.0, 0.0]);
+        stack.push_all(&[40.0, 0.0]);
+        let res_stack = fb.filter_signal(0, stack.channel_iter_newest_first(0).unwrap()).unwrap();
+        assert_eq!(res_stack, 52.5);
     }
 }

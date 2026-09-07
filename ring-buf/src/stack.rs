@@ -1,7 +1,9 @@
+use core::iter::Rev;
 use core::marker::PhantomData;
 use raw_storage::traits::StorageMut;
 use crate::error::{Result, RingBufError};
 use crate::iter::{CBufIter, CBufIterMut};
+use crate::math;
 use crate::view::{CBufView, CBufViewMut};
 
 /// Owning multi-channel stack of ring buffers with arbitrary capacity per channel.
@@ -53,10 +55,7 @@ impl<T, S: StorageMut<Item = T>> CBufStack<T, S> {
         if items.len() < self.channels {
             return;
         }
-        let mut new_head = self.head + 1;
-        if new_head == self.capacity {
-            new_head = 0;
-        }
+        let new_head = math::next_head(self.head, self.capacity);
         let data = self.storage.as_mut_slice();
         for ch in 0..self.channels {
             let offset = ch * self.capacity + new_head;
@@ -71,10 +70,7 @@ impl<T, S: StorageMut<Item = T>> CBufStack<T, S> {
     /// Advances the shared head position and updates length.
     #[inline(always)]
     pub fn advance_head(&mut self) {
-        self.head += 1;
-        if self.head == self.capacity {
-            self.head = 0;
-        }
+        self.head = math::next_head(self.head, self.capacity);
         if self.len < self.capacity {
             self.len += 1;
         }
@@ -134,7 +130,7 @@ impl<T, S: StorageMut<Item = T>> CBufStack<T, S> {
         if ch >= self.channels || rel >= self.len {
             None
         } else {
-            let phys_in_ch = (self.head + self.capacity - rel) % self.capacity;
+            let phys_in_ch = math::phys_index(self.head, self.capacity, rel);
             let phys = ch * self.capacity + phys_in_ch;
             Some(&self.storage.as_slice()[phys])
         }
@@ -146,7 +142,7 @@ impl<T, S: StorageMut<Item = T>> CBufStack<T, S> {
         if ch >= self.channels || rel >= self.len {
             None
         } else {
-            let phys_in_ch = (self.head + self.capacity - rel) % self.capacity;
+            let phys_in_ch = math::phys_index(self.head, self.capacity, rel);
             let phys = ch * self.capacity + phys_in_ch;
             Some(&mut self.storage.as_mut_slice()[phys])
         }
@@ -158,19 +154,9 @@ impl<T, S: StorageMut<Item = T>> CBufStack<T, S> {
         if ch >= self.channels {
             return None;
         }
-        if self.len == 0 {
-            return Some((&[], &[]));
-        }
         let ch_start = ch * self.capacity;
         let ch_data = &self.storage.as_slice()[ch_start..ch_start + self.capacity];
-        let oldest = (self.head + self.capacity + 1 - self.len) % self.capacity;
-        if oldest + self.len <= self.capacity {
-            Some((&ch_data[oldest..oldest + self.len], &[]))
-        } else {
-            let first_len = self.capacity - oldest;
-            let second_len = self.len - first_len;
-            Some((&ch_data[oldest..self.capacity], &ch_data[..second_len]))
-        }
+        Some(math::as_slices(ch_data, self.head, self.len, self.capacity))
     }
 
     /// Returns channel `ch` data in logical order as up to two continuous mutable slices.
@@ -179,26 +165,12 @@ impl<T, S: StorageMut<Item = T>> CBufStack<T, S> {
         if ch >= self.channels {
             return None;
         }
-        if self.len == 0 {
-            return Some((&mut [], &mut []));
-        }
         let ch_start = ch * self.capacity;
         let capacity = self.capacity;
         let len = self.len;
         let head = self.head;
         let ch_data = &mut self.storage.as_mut_slice()[ch_start..ch_start + capacity];
-        let oldest = (head + capacity + 1 - len) % capacity;
-        if oldest + len <= capacity {
-            let slice = &mut ch_data[oldest..oldest + len];
-            Some((slice, &mut []))
-        } else {
-            let first_len = capacity - oldest;
-            let second_len = len - first_len;
-            let (left, right) = ch_data.split_at_mut(oldest);
-            let (slice1, _) = right.split_at_mut(first_len);
-            let (slice2, _) = left.split_at_mut(second_len);
-            Some((slice1, slice2))
-        }
+        Some(math::as_slices_mut(ch_data, head, len, capacity))
     }
 
     /// Returns an iterator over elements in channel `ch` in logical order.
@@ -206,6 +178,12 @@ impl<T, S: StorageMut<Item = T>> CBufStack<T, S> {
     pub fn channel_iter(&self, ch: usize) -> Option<CBufIter<'_, T>> {
         let (s1, s2) = self.channel_slices(ch)?;
         Some(CBufIter::new(s1, s2))
+    }
+
+    /// Returns an iterator over elements in channel `ch` in reverse logical order (newest -> oldest).
+    #[inline(always)]
+    pub fn channel_iter_newest_first(&self, ch: usize) -> Option<Rev<CBufIter<'_, T>>> {
+        Some(self.channel_iter(ch)?.rev())
     }
 
     /// Returns a mutable iterator over elements in channel `ch` in logical order.
@@ -259,5 +237,11 @@ mod tests {
         assert_eq!(stack.get(1, 0), Some(&20.0));
         assert_eq!(stack.get(0, 1), Some(&1.0));
         assert_eq!(stack.get(1, 1), Some(&10.0));
+
+        let mut ch0_rev = [0.0f32; 2];
+        for (i, v) in stack.channel_iter_newest_first(0).unwrap().copied().enumerate() {
+            ch0_rev[i] = v;
+        }
+        assert_eq!(ch0_rev, [2.0, 1.0]);
     }
 }

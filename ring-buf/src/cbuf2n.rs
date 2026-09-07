@@ -1,7 +1,9 @@
+use core::iter::Rev;
 use core::marker::PhantomData;
 use raw_storage::traits::StorageMut;
 use crate::error::{Result, RingBufError};
 use crate::iter::{CBufIter, CBufIterMut};
+use crate::math;
 use crate::view2n::{CBuf2NView, CBuf2NViewMut};
 
 /// Owning single ring buffer with power-of-two capacity.
@@ -45,7 +47,7 @@ impl<T, S: StorageMut<Item = T>> CBuf2N<T, S> {
     /// Pushes an item into the ring buffer, overwriting the oldest element if full.
     #[inline(always)]
     pub fn push(&mut self, item: T) {
-        self.head = (self.head + 1) & self.mask;
+        self.head = math::next_head_2n(self.head, self.mask);
         self.storage.as_mut_slice()[self.head] = item;
         if self.len < self.capacity {
             self.len += 1;
@@ -89,7 +91,7 @@ impl<T, S: StorageMut<Item = T>> CBuf2N<T, S> {
         if rel >= self.len {
             None
         } else {
-            let phys = (self.head + self.capacity - rel) & self.mask;
+            let phys = math::phys_index_2n(self.head, self.capacity, rel, self.mask);
             Some(&self.storage.as_slice()[phys])
         }
     }
@@ -100,7 +102,7 @@ impl<T, S: StorageMut<Item = T>> CBuf2N<T, S> {
         if rel >= self.len {
             None
         } else {
-            let phys = (self.head + self.capacity - rel) & self.mask;
+            let phys = math::phys_index_2n(self.head, self.capacity, rel, self.mask);
             Some(&mut self.storage.as_mut_slice()[phys])
         }
     }
@@ -108,41 +110,13 @@ impl<T, S: StorageMut<Item = T>> CBuf2N<T, S> {
     /// Returns the buffer data in logical order (oldest -> newest) as up to two continuous slices.
     #[inline(always)]
     pub fn as_slices(&self) -> (&[T], &[T]) {
-        if self.len == 0 {
-            return (&[], &[]);
-        }
-        let oldest = (self.head + self.capacity + 1 - self.len) & self.mask;
-        let data = self.storage.as_slice();
-        if oldest + self.len <= self.capacity {
-            (&data[oldest..oldest + self.len], &[])
-        } else {
-            let first_len = self.capacity - oldest;
-            let second_len = self.len - first_len;
-            (&data[oldest..self.capacity], &data[..second_len])
-        }
+        math::as_slices_2n(self.storage.as_slice(), self.head, self.len, self.capacity, self.mask)
     }
 
     /// Returns the buffer data in logical order (oldest -> newest) as up to two continuous mutable slices.
     #[inline(always)]
     pub fn as_slices_mut(&mut self) -> (&mut [T], &mut [T]) {
-        if self.len == 0 {
-            return (&mut [], &mut []);
-        }
-        let oldest = (self.head + self.capacity + 1 - self.len) & self.mask;
-        let len = self.len;
-        let capacity = self.capacity;
-        let data = self.storage.as_mut_slice();
-        if oldest + len <= capacity {
-            let slice = &mut data[oldest..oldest + len];
-            (slice, &mut [])
-        } else {
-            let first_len = capacity - oldest;
-            let second_len = len - first_len;
-            let (left, right) = data.split_at_mut(oldest);
-            let (slice1, _) = right.split_at_mut(first_len);
-            let (slice2, _) = left.split_at_mut(second_len);
-            (slice1, slice2)
-        }
+        math::as_slices_mut_2n(self.storage.as_mut_slice(), self.head, self.len, self.capacity, self.mask)
     }
 
     /// Returns an immutable view over the ring buffer.
@@ -162,6 +136,12 @@ impl<T, S: StorageMut<Item = T>> CBuf2N<T, S> {
     pub fn iter(&self) -> CBufIter<'_, T> {
         let (s1, s2) = self.as_slices();
         CBufIter::new(s1, s2)
+    }
+
+    /// Returns an iterator over immutable references in reverse logical order (newest -> oldest).
+    #[inline(always)]
+    pub fn iter_newest_first(&self) -> Rev<CBufIter<'_, T>> {
+        self.iter().rev()
     }
 
     /// Returns an iterator over mutable references in logical order (oldest -> newest).
@@ -224,5 +204,11 @@ mod tests {
         let (s1, s2) = buf.as_slices();
         assert_eq!(s1, &[2, 3, 4]);
         assert_eq!(s2, &[5]);
+
+        let mut rev = [0i32; 4];
+        for (i, v) in buf.iter_newest_first().copied().enumerate() {
+            rev[i] = v;
+        }
+        assert_eq!(rev, [5, 4, 3, 2]);
     }
 }

@@ -1,5 +1,7 @@
+use core::iter::Rev;
 use crate::error::{Result, RingBufError};
 use crate::iter::{CBufIter, CBufIterMut};
+use crate::math;
 
 /// Immutable view over a ring buffer with arbitrary capacity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +86,7 @@ impl<'a, T> CBufView<'a, T> {
         if rel >= self.len {
             None
         } else {
-            let phys = (self.head + self.capacity - rel) % self.capacity;
+            let phys = math::phys_index(self.head, self.capacity, rel);
             Some(&self.data[phys])
         }
     }
@@ -92,17 +94,7 @@ impl<'a, T> CBufView<'a, T> {
     /// Returns the buffer data in logical order (oldest -> newest) as up to two continuous slices.
     #[inline(always)]
     pub fn as_slices(&self) -> (&'a [T], &'a [T]) {
-        if self.len == 0 {
-            return (&[], &[]);
-        }
-        let oldest = (self.head + self.capacity + 1 - self.len) % self.capacity;
-        if oldest + self.len <= self.capacity {
-            (&self.data[oldest..oldest + self.len], &[])
-        } else {
-            let first_len = self.capacity - oldest;
-            let second_len = self.len - first_len;
-            (&self.data[oldest..self.capacity], &self.data[..second_len])
-        }
+        math::as_slices(self.data, self.head, self.len, self.capacity)
     }
 
     /// Returns an iterator over immutable references in logical order (oldest -> newest).
@@ -110,6 +102,12 @@ impl<'a, T> CBufView<'a, T> {
     pub fn iter(&self) -> CBufIter<'a, T> {
         let (s1, s2) = self.as_slices();
         CBufIter::new(s1, s2)
+    }
+
+    /// Returns an iterator over immutable references in reverse logical order (newest -> oldest).
+    #[inline(always)]
+    pub fn iter_newest_first(&self) -> Rev<CBufIter<'a, T>> {
+        self.iter().rev()
     }
 }
 
@@ -191,10 +189,7 @@ impl<'a, T> CBufViewMut<'a, T> {
     /// Uses branching logic to advance head (no modulo operator).
     #[inline(always)]
     pub fn push(&mut self, item: T) {
-        self.head += 1;
-        if self.head == self.capacity {
-            self.head = 0;
-        }
+        self.head = math::next_head(self.head, self.capacity);
         self.data[self.head] = item;
         if self.len < self.capacity {
             self.len += 1;
@@ -238,7 +233,7 @@ impl<'a, T> CBufViewMut<'a, T> {
         if rel >= self.len {
             None
         } else {
-            let phys = (self.head + self.capacity - rel) % self.capacity;
+            let phys = math::phys_index(self.head, self.capacity, rel);
             Some(&self.data[phys])
         }
     }
@@ -249,7 +244,7 @@ impl<'a, T> CBufViewMut<'a, T> {
         if rel >= self.len {
             None
         } else {
-            let phys = (self.head + self.capacity - rel) % self.capacity;
+            let phys = math::phys_index(self.head, self.capacity, rel);
             Some(&mut self.data[phys])
         }
     }
@@ -257,39 +252,13 @@ impl<'a, T> CBufViewMut<'a, T> {
     /// Returns the buffer data in logical order (oldest -> newest) as up to two continuous slices.
     #[inline(always)]
     pub fn as_slices(&self) -> (&[T], &[T]) {
-        if self.len == 0 {
-            return (&[], &[]);
-        }
-        let oldest = (self.head + self.capacity + 1 - self.len) % self.capacity;
-        if oldest + self.len <= self.capacity {
-            (&self.data[oldest..oldest + self.len], &[])
-        } else {
-            let first_len = self.capacity - oldest;
-            let second_len = self.len - first_len;
-            (&self.data[oldest..self.capacity], &self.data[..second_len])
-        }
+        math::as_slices(self.data, self.head, self.len, self.capacity)
     }
 
     /// Returns the buffer data in logical order (oldest -> newest) as up to two continuous mutable slices.
     #[inline(always)]
     pub fn as_slices_mut(&mut self) -> (&mut [T], &mut [T]) {
-        if self.len == 0 {
-            return (&mut [], &mut []);
-        }
-        let oldest = (self.head + self.capacity + 1 - self.len) % self.capacity;
-        let len = self.len;
-        let capacity = self.capacity;
-        if oldest + len <= capacity {
-            let slice = &mut self.data[oldest..oldest + len];
-            (slice, &mut [])
-        } else {
-            let first_len = capacity - oldest;
-            let second_len = len - first_len;
-            let (left, right) = self.data.split_at_mut(oldest);
-            let (slice1, _) = right.split_at_mut(first_len);
-            let (slice2, _) = left.split_at_mut(second_len);
-            (slice1, slice2)
-        }
+        math::as_slices_mut(self.data, self.head, self.len, self.capacity)
     }
 
     /// Returns an iterator over immutable references in logical order (oldest -> newest).
@@ -297,6 +266,12 @@ impl<'a, T> CBufViewMut<'a, T> {
     pub fn iter(&self) -> CBufIter<'_, T> {
         let (s1, s2) = self.as_slices();
         CBufIter::new(s1, s2)
+    }
+
+    /// Returns an iterator over immutable references in reverse logical order (newest -> oldest).
+    #[inline(always)]
+    pub fn iter_newest_first(&self) -> Rev<CBufIter<'_, T>> {
+        self.iter().rev()
     }
 
     /// Returns an iterator over mutable references in logical order (oldest -> newest).
@@ -334,24 +309,8 @@ impl<'a, T> IntoIterator for CBufViewMut<'a, T> {
 
     #[inline(always)]
     fn into_iter(self) -> Self::IntoIter {
-        let capacity = self.capacity;
-        let head = self.head;
-        let len = self.len;
-        if len == 0 {
-            return CBufIterMut::new(&mut [], &mut []);
-        }
-        let oldest = (head + capacity + 1 - len) % capacity;
-        if oldest + len <= capacity {
-            let slice = &mut self.data[oldest..oldest + len];
-            CBufIterMut::new(slice, &mut [])
-        } else {
-            let first_len = capacity - oldest;
-            let second_len = len - first_len;
-            let (left, right) = self.data.split_at_mut(oldest);
-            let (slice1, _) = right.split_at_mut(first_len);
-            let (slice2, _) = left.split_at_mut(second_len);
-            CBufIterMut::new(slice1, slice2)
-        }
+        let (s1, s2) = math::as_slices_mut(self.data, self.head, self.len, self.capacity);
+        CBufIterMut::new(s1, s2)
     }
 }
 
@@ -395,5 +354,35 @@ mod tests {
             collected[i] = v;
         }
         assert_eq!(collected, [200, 300, 400]);
+
+        let mut rev_collected = [0i32; 3];
+        for (i, v) in view.iter_newest_first().copied().enumerate() {
+            rev_collected[i] = v;
+        }
+        assert_eq!(rev_collected, [400, 300, 200]);
+    }
+
+    #[test]
+    fn test_empty_buffer_operations() {
+        let mem = [1i32, 2, 3];
+        let view = CBufView::try_new(&mem).unwrap();
+        assert_eq!(view.len(), 0);
+        assert!(view.is_empty());
+        assert_eq!(view.get(0), None);
+        assert_eq!(view.as_slices(), (&[][..], &[][..]));
+        assert_eq!(view.iter().next(), None);
+        assert_eq!(view.iter_newest_first().next(), None);
+
+        let mut mem_mut = [1i32, 2, 3];
+        let mut view_mut = CBufViewMut::try_new(&mut mem_mut).unwrap();
+        assert_eq!(view_mut.len(), 0);
+        assert!(view_mut.is_empty());
+        assert_eq!(view_mut.get(0), None);
+        assert_eq!(view_mut.get_mut(0), None);
+        assert_eq!(view_mut.as_slices(), (&[][..], &[][..]));
+        assert_eq!(view_mut.as_slices_mut(), (&mut [][..], &mut [][..]));
+        assert_eq!(view_mut.iter().next(), None);
+        assert_eq!(view_mut.iter_mut().next(), None);
+        assert_eq!(view_mut.iter_newest_first().next(), None);
     }
 }

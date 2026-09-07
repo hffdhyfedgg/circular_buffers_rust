@@ -1,7 +1,9 @@
+use core::iter::Rev;
 use core::marker::PhantomData;
 use raw_storage::traits::StorageMut;
 use crate::error::{Result, RingBufError};
 use crate::iter::{CBufIter, CBufIterMut};
+use crate::math;
 
 /// Owning single ring buffer with arbitrary capacity and a tail offset.
 #[derive(Debug)]
@@ -92,10 +94,7 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
     /// Pushes an item into full capacity without tail restriction.
     #[inline(always)]
     pub fn push(&mut self, item: T) {
-        self.head += 1;
-        if self.head == self.capacity {
-            self.head = 0;
-        }
+        self.head = math::next_head(self.head, self.capacity);
         self.storage.as_mut_slice()[self.head] = item;
         if self.len < self.capacity {
             self.len += 1;
@@ -116,7 +115,7 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
         if rel >= eff {
             None
         } else {
-            let phys = (self.head + self.capacity - rel) % self.capacity;
+            let phys = math::phys_index(self.head, self.capacity, rel);
             Some(&self.storage.as_slice()[phys])
         }
     }
@@ -128,7 +127,7 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
         if rel >= eff {
             None
         } else {
-            let phys = (self.head + self.capacity - rel) % self.capacity;
+            let phys = math::phys_index(self.head, self.capacity, rel);
             Some(&mut self.storage.as_mut_slice()[phys])
         }
     }
@@ -136,42 +135,14 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
     /// Returns data in logical order (limited to effective length) as up to two continuous slices.
     #[inline(always)]
     pub fn as_slices(&self) -> (&[T], &[T]) {
-        let eff = self.effective_len();
-        if eff == 0 {
-            return (&[], &[]);
-        }
-        let oldest = (self.head + self.capacity + 1 - eff) % self.capacity;
-        let data = self.storage.as_slice();
-        if oldest + eff <= self.capacity {
-            (&data[oldest..oldest + eff], &[])
-        } else {
-            let first_len = self.capacity - oldest;
-            let second_len = eff - first_len;
-            (&data[oldest..self.capacity], &data[..second_len])
-        }
+        math::as_slices(self.storage.as_slice(), self.head, self.effective_len(), self.capacity)
     }
 
     /// Returns data in logical order (limited to effective length) as up to two continuous mutable slices.
     #[inline(always)]
     pub fn as_slices_mut(&mut self) -> (&mut [T], &mut [T]) {
         let eff = self.effective_len();
-        if eff == 0 {
-            return (&mut [], &mut []);
-        }
-        let oldest = (self.head + self.capacity + 1 - eff) % self.capacity;
-        let capacity = self.capacity;
-        let data = self.storage.as_mut_slice();
-        if oldest + eff <= capacity {
-            let slice = &mut data[oldest..oldest + eff];
-            (slice, &mut [])
-        } else {
-            let first_len = capacity - oldest;
-            let second_len = eff - first_len;
-            let (left, right) = data.split_at_mut(oldest);
-            let (slice1, _) = right.split_at_mut(first_len);
-            let (slice2, _) = left.split_at_mut(second_len);
-            (slice1, slice2)
-        }
+        math::as_slices_mut(self.storage.as_mut_slice(), self.head, eff, self.capacity)
     }
 
     /// Returns iterator over effective elements in logical order.
@@ -179,6 +150,12 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
     pub fn iter(&self) -> CBufIter<'_, T> {
         let (s1, s2) = self.as_slices();
         CBufIter::new(s1, s2)
+    }
+
+    /// Returns iterator over effective elements in reverse logical order (newest -> oldest).
+    #[inline(always)]
+    pub fn iter_newest_first(&self) -> Rev<CBufIter<'_, T>> {
+        self.iter().rev()
     }
 
     /// Returns mutable iterator over effective elements in logical order.
@@ -215,6 +192,12 @@ mod tests {
         assert_eq!(tail_buf.get(1), Some(&40));
         assert_eq!(tail_buf.get(2), Some(&30));
         assert_eq!(tail_buf.get(3), None);
+
+        let mut rev = [0i32; 3];
+        for (i, v) in tail_buf.iter_newest_first().copied().enumerate() {
+            rev[i] = v;
+        }
+        assert_eq!(rev, [50, 40, 30]);
 
         tail_buf.resize_tail(1).unwrap();
         assert_eq!(tail_buf.effective_len(), 4);
