@@ -8,6 +8,7 @@ pub mod cbuf2n;
 pub mod error;
 pub mod filter;
 pub mod iter;
+pub mod math;
 pub mod ops;
 pub mod stack;
 pub mod stack2n;
@@ -20,7 +21,7 @@ pub mod view2n;
 
 pub use cbuf::CBuf;
 pub use cbuf2n::CBuf2N;
-pub use error::{RingBufError, Result};
+pub use error::{Result, RingBufError};
 pub use filter::FilterBank;
 pub use iter::{CBufIter, CBufIterMut};
 pub use stack::CBufStack;
