@@ -2,6 +2,9 @@ use core::marker::PhantomData;
 use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
 
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
 use crate::error::{Result, StridedError};
 
 /// A mutable view over arbitrary non-overlapping indexed elements.
@@ -115,8 +118,8 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
                 #[cfg(feature = "verbose-errors")]
                 {
                     return Err(StridedError::OutOfBounds {
-                        requested: idx,
-                        max: slice_len,
+                        index: idx,
+                        len: slice_len,
                     });
                 }
                 #[cfg(not(feature = "verbose-errors"))]
@@ -143,7 +146,8 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
                 #[cfg(feature = "verbose-errors")]
                 {
                     return Err(StridedError::OverlapDetected {
-                        index: all_indices[i],
+                        offset1: all_indices[i - 1],
+                        offset2: all_indices[i],
                     });
                 }
                 #[cfg(not(feature = "verbose-errors"))]
@@ -170,7 +174,8 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
                     #[cfg(feature = "verbose-errors")]
                     {
                         return Err(StridedError::OverlapDetected {
-                            index: active_buf[i],
+                        offset1: active_buf[i - 1],
+                        offset2: active_buf[i],
                         });
                     }
                     #[cfg(not(feature = "verbose-errors"))]
@@ -185,7 +190,10 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
                     if index_sets[i][elem_idx + 1..].contains(&idx1) {
                         #[cfg(feature = "verbose-errors")]
                         {
-                            return Err(StridedError::OverlapDetected { index: idx1 });
+                            return Err(StridedError::OverlapDetected {
+                                offset1: idx1,
+                                offset2: idx1,
+                            });
                         }
                         #[cfg(not(feature = "verbose-errors"))]
                         {
@@ -196,7 +204,10 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
                         if index_sets[j].contains(&idx1) {
                             #[cfg(feature = "verbose-errors")]
                             {
-                                return Err(StridedError::OverlapDetected { index: idx1 });
+                                return Err(StridedError::OverlapDetected {
+                                    offset1: idx1,
+                                    offset2: idx1,
+                                });
                             }
                             #[cfg(not(feature = "verbose-errors"))]
                             {

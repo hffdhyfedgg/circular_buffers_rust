@@ -1,7 +1,9 @@
 use core::marker::PhantomData;
+use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
 use raw_storage::{Storage, StorageMut};
 
+use crate::iter::{StridedIter, StridedIterMut};
 use crate::pointer::offset_ptr;
 
 /// An immutable view over elements spaced by a constant stride.
@@ -32,7 +34,7 @@ impl<'a, T> StridedView<'a, T> {
     /// 2. Memory range `[ptr + i * stride]` for `0 <= i < len` does not alias any active mutable references for lifetime `'a`.
     /// 3. `stride` is greater than zero if `len > 1`.
     #[inline(always)]
-    pub unsafe fn new_unchecked(ptr: NonNull<T>, stride: usize, len: usize) -> Self {
+    pub(crate) unsafe fn new_unchecked(ptr: NonNull<T>, stride: usize, len: usize) -> Self {
         Self {
             ptr,
             stride,
@@ -86,7 +88,21 @@ impl<'a, T> StridedView<'a, T> {
             Some(&*elem_ptr.as_ptr())
         }
     }
+
+    /// Returns an iterator over immutable references in this view.
+    #[inline]
+    pub fn iter(&self) -> StridedIter<'a, T> {
+        StridedIter::new(self.ptr, self.stride, self.len)
+    }
 }
+
+impl<'a, T> Clone for StridedView<'a, T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<'a, T> Copy for StridedView<'a, T> {}
 
 impl<'a, T> StridedViewMut<'a, T> {
     /// Creates a new [`StridedViewMut`] without bounds or aliasing checks.
@@ -98,7 +114,7 @@ impl<'a, T> StridedViewMut<'a, T> {
     /// 2. Memory range `[ptr + i * stride]` for `0 <= i < len` does not alias any other active references for lifetime `'a`.
     /// 3. `stride` is greater than zero if `len > 1`.
     #[inline(always)]
-    pub unsafe fn new_unchecked(ptr: NonNull<T>, stride: usize, len: usize) -> Self {
+    pub(crate) unsafe fn new_unchecked(ptr: NonNull<T>, stride: usize, len: usize) -> Self {
         Self {
             ptr,
             stride,
@@ -184,6 +200,93 @@ impl<'a, T> StridedViewMut<'a, T> {
     pub fn reborrow(&mut self) -> StridedViewMut<'_, T> {
         // SAFETY: self.ptr is valid for self.len elements with self.stride, and &mut self guarantees exclusive access.
         unsafe { StridedViewMut::new_unchecked(self.ptr, self.stride, self.len) }
+    }
+
+    /// Returns an iterator over immutable references in this view.
+    #[inline]
+    pub fn iter(&self) -> StridedIter<'_, T> {
+        StridedIter::new(self.ptr, self.stride, self.len)
+    }
+
+    /// Returns an iterator over mutable references in this view.
+    #[inline]
+    pub fn iter_mut(&mut self) -> StridedIterMut<'_, T> {
+        StridedIterMut::new(self.ptr, self.stride, self.len)
+    }
+}
+
+impl<'a, T> Index<usize> for StridedView<'a, T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, index: usize) -> &Self::Output {
+        self.get(index).expect("index out of bounds")
+    }
+}
+
+impl<'a, T> Index<usize> for StridedViewMut<'a, T> {
+    type Output = T;
+
+    #[inline(always)]
+    fn index(&self, index: usize) -> &Self::Output {
+        self.get(index).expect("index out of bounds")
+    }
+}
+
+impl<'a, T> IndexMut<usize> for StridedViewMut<'a, T> {
+    #[inline(always)]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.get_mut(index).expect("index out of bounds")
+    }
+}
+
+impl<'a, T> IntoIterator for StridedView<'a, T> {
+    type Item = &'a T;
+    type IntoIter = StridedIter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, 'b, T> IntoIterator for &'b StridedView<'a, T> {
+    type Item = &'a T;
+    type IntoIter = StridedIter<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, T> IntoIterator for StridedViewMut<'a, T> {
+    type Item = &'a mut T;
+    type IntoIter = StridedIterMut<'a, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        StridedIterMut::new(self.ptr, self.stride, self.len)
+    }
+}
+
+impl<'a, 'b, T> IntoIterator for &'b StridedViewMut<'a, T> {
+    type Item = &'b T;
+    type IntoIter = StridedIter<'b, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+impl<'a, 'b, T> IntoIterator for &'b mut StridedViewMut<'a, T> {
+    type Item = &'b mut T;
+    type IntoIter = StridedIterMut<'b, T>;
+
+    #[inline]
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter_mut()
     }
 }
 
@@ -300,5 +403,47 @@ mod tests {
             *v = 10;
         }
         assert_eq!(view_mut.get(0), Some(&10));
+    }
+
+    #[test]
+    fn test_view_indexing_and_copy() {
+        let mut data = [10, 20, 30, 40];
+        let mut view_mut = StridedViewMut::from_mut_slice(&mut data);
+
+        assert_eq!(view_mut[0], 10);
+        view_mut[1] = 200;
+        assert_eq!(view_mut[1], 200);
+
+        let view = view_mut.as_view();
+        let view_copy = view; // Test Copy
+        let view_clone = view.clone(); // Test Clone
+        assert_eq!(view_copy[1], 200);
+        assert_eq!(view_clone[1], 200);
+
+        // Test iterators
+        let sum: i32 = view.iter().sum();
+        assert_eq!(sum, 10 + 200 + 30 + 40);
+
+        for x in view_mut.iter_mut() {
+            *x += 1;
+        }
+        assert_eq!(data[0], 11);
+        assert_eq!(data[1], 201);
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_view_index_out_of_bounds_panic() {
+        let data = [1, 2, 3];
+        let view = StridedView::from_slice(&data);
+        let _ = view[3];
+    }
+
+    #[test]
+    #[should_panic]
+    fn test_view_mut_index_out_of_bounds_panic() {
+        let mut data = [1, 2, 3];
+        let view = StridedViewMut::from_mut_slice(&mut data);
+        let _ = view[3];
     }
 }
