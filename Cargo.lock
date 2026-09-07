@@ -7,6 +7,14 @@ name = "raw-storage"
 version = "0.1.0"
 
 [[package]]
+name = "ring-buf"
+version = "0.1.0"
+dependencies = [
+ "raw-storage",
+ "strided-mem",
+]
+
+[[package]]
 name = "strided-mem"
 version = "0.1.0"
 dependencies = [

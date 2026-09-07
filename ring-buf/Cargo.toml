@@ -1,0 +1,15 @@
+[package]
+name = "ring-buf"
+version = "0.1.0"
+edition = "2021"
+description = "Ring buffers, stacks, tails, filter banks, zero-cost views, and math ops for no_std environments."
+
+[features]
+default = []
+alloc = ["raw-storage/alloc", "strided-mem/alloc"]
+std = ["alloc", "raw-storage/std", "strided-mem/std"]
+verbose-errors = ["raw-storage/verbose-errors", "strided-mem/verbose-errors"]
+
+[dependencies]
+raw-storage = { path = "../raw-storage", default-features = false }
+strided-mem = { path = "../strided-mem", default-features = false }
