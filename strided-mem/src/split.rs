@@ -185,6 +185,10 @@ impl<'a, T> StridedViewMut<'a, T> {
     ///
     /// Returns [`StridedError::ZeroStride`] if `N == 0`.
     /// Returns [`StridedError::OutOfBounds`] if `stride * N` overflows `usize`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn try_split_strided<const N: usize>(self) -> Result<[StridedViewMut<'a, T>; N]> {
         if N == 0 {
@@ -229,24 +233,16 @@ impl<'a, T> StridedViewMut<'a, T> {
         Ok(views)
     }
 
-    /// Splits a mutable strided view into `N` disjoint mutable sub-views.
+    /// Dynamically splits a mutable view into `n` sub-views via an iterator.
     ///
-    /// # Math & Soundness
+    /// # Errors
     ///
-    /// Sub-view `i` ($0 \le i < N$) contains elements at original indices $i + k \cdot N$.
-    /// Since $i_1 \not\equiv i_2 \pmod N$ for distinct $i_1, i_2 < N$, the set of memory
-    /// locations accessed by each sub-view is strictly disjoint. No two sub-views can
-    /// alias the same memory location, preserving Rust's exclusive mutability invariants.
+    /// Returns [`StridedError::ZeroStride`] if `n == 0`.
+    /// Returns [`StridedError::OutOfBounds`] if `stride * n` overflows `usize`.
     ///
     /// # Panics
     ///
-    /// Panics if `N == 0` or if `stride * N` overflows `usize`.
-    #[inline]
-    pub fn split_strided<const N: usize>(self) -> [StridedViewMut<'a, T>; N] {
-        self.try_split_strided::<N>().expect("failed to split strided view")
-    }
-
-    /// Dynamically splits a mutable view into `n` sub-views via an iterator.
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn try_split_dyn(self, n: usize) -> Result<StridedSplitIterMut<'a, T>> {
         if n == 0 {
@@ -271,22 +267,31 @@ impl<'a, T> StridedViewMut<'a, T> {
         Ok(StridedSplitIterMut::new(ptr, stride, len, n))
     }
 
-    #[inline]
-    pub fn split_dyn(self, n: usize) -> StridedSplitIterMut<'a, T> {
-        self.try_split_dyn(n).expect("failed to split strided view dynamically")
-    }
-
+    /// Dynamically splits a mutable view into `n` sub-views via an iterator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StridedError::ZeroStride`] if `n == 0`.
+    /// Returns [`StridedError::OutOfBounds`] if `stride * n` overflows `usize`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn try_split_strided_dyn(self, n: usize) -> Result<StridedSplitIterMut<'a, T>> {
         self.try_split_dyn(n)
     }
 
-    #[inline]
-    pub fn split_strided_dyn(self, n: usize) -> StridedSplitIterMut<'a, T> {
-        self.split_dyn(n)
-    }
-
     /// Stack-bounded split into `n` sub-views where `n <= MAX_N`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StridedError::ZeroStride`] if `n == 0`.
+    /// Returns [`StridedError::OutOfBounds`] if `n > MAX_N` or `stride * n` overflows `usize`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn split_bounded<const MAX_N: usize>(
         self,
@@ -351,6 +356,10 @@ impl<'a, T> StridedView<'a, T> {
     ///
     /// Returns [`StridedError::ZeroStride`] if `N == 0`.
     /// Returns [`StridedError::OutOfBounds`] if `stride * N` overflows `usize`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn try_split_strided<const N: usize>(self) -> Result<[StridedView<'a, T>; N]> {
         if N == 0 {
@@ -392,17 +401,16 @@ impl<'a, T> StridedView<'a, T> {
         Ok(views)
     }
 
-    /// Splits an immutable strided view into `N` disjoint immutable sub-views.
+    /// Dynamically splits an immutable view into `n` sub-views via an iterator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StridedError::ZeroStride`] if `n == 0`.
+    /// Returns [`StridedError::OutOfBounds`] if `stride * n` overflows `usize`.
     ///
     /// # Panics
     ///
-    /// Panics if `N == 0` or if `stride * N` overflows `usize`.
-    #[inline]
-    pub fn split_strided<const N: usize>(self) -> [StridedView<'a, T>; N] {
-        self.try_split_strided::<N>().expect("failed to split strided view")
-    }
-
-    /// Dynamically splits an immutable view into `n` sub-views via an iterator.
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn try_split_dyn(self, n: usize) -> Result<StridedSplitIter<'a, T>> {
         if n == 0 {
@@ -427,22 +435,31 @@ impl<'a, T> StridedView<'a, T> {
         Ok(StridedSplitIter::new(ptr, stride, len, n))
     }
 
-    #[inline]
-    pub fn split_dyn(self, n: usize) -> StridedSplitIter<'a, T> {
-        self.try_split_dyn(n).expect("failed to split strided view dynamically")
-    }
-
+    /// Dynamically splits an immutable view into `n` sub-views via an iterator.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StridedError::ZeroStride`] if `n == 0`.
+    /// Returns [`StridedError::OutOfBounds`] if `stride * n` overflows `usize`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn try_split_strided_dyn(self, n: usize) -> Result<StridedSplitIter<'a, T>> {
         self.try_split_dyn(n)
     }
 
-    #[inline]
-    pub fn split_strided_dyn(self, n: usize) -> StridedSplitIter<'a, T> {
-        self.split_dyn(n)
-    }
-
     /// Stack-bounded split into `n` sub-views where `n <= MAX_N`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`StridedError::ZeroStride`] if `n == 0`.
+    /// Returns [`StridedError::OutOfBounds`] if `n > MAX_N` or `stride * n` overflows `usize`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn split_bounded<const MAX_N: usize>(
         self,
@@ -509,7 +526,7 @@ mod tests {
         let mut data = [10, 20, 30, 40, 50];
         let view = StridedViewMut::from_mut_slice(&mut data);
 
-        let [mut even, mut odd] = view.split_strided::<2>();
+        let [mut even, mut odd] = view.try_split_strided::<2>().unwrap();
 
         assert_eq!(even.len(), 3); // indices 0, 2, 4 (elements 10, 30, 50)
         assert_eq!(odd.len(), 2);  // indices 1, 3    (elements 20, 40)
@@ -542,7 +559,7 @@ mod tests {
         let mut data = [1, 2, 3, 4, 5, 6, 7];
         let view = StridedViewMut::from_mut_slice(&mut data);
 
-        let [v0, v1, v2] = view.split_strided::<3>();
+        let [v0, v1, v2] = view.try_split_strided::<3>().unwrap();
 
         assert_eq!(v0.len(), 3); // 1, 4, 7
         assert_eq!(v1.len(), 2); // 2, 5
@@ -565,7 +582,7 @@ mod tests {
         let mut data = [100, 200];
         let view = StridedViewMut::from_mut_slice(&mut data);
 
-        let [v0, v1, v2] = view.split_strided::<3>();
+        let [v0, v1, v2] = view.try_split_strided::<3>().unwrap();
 
         assert_eq!(v0.len(), 1); // 100
         assert_eq!(v1.len(), 1); // 200
@@ -594,7 +611,7 @@ mod tests {
         let mut data = [10, 20, 30, 40, 50, 60, 70];
         let view = StridedViewMut::from_mut_slice(&mut data);
 
-        let mut iter = view.split_dyn(3);
+        let mut iter = view.try_split_dyn(3).unwrap();
         assert_eq!(iter.len(), 3);
 
         let mut v0 = iter.next().unwrap();
@@ -606,9 +623,9 @@ mod tests {
         assert_eq!(v1.len(), 2); // 20, 50
         assert_eq!(v2.len(), 2); // 30, 60
 
-        v0[1] = 400;
-        v1[0] = 200;
-        v2[1] = 600;
+        *v0.get_mut(1).unwrap() = 400;
+        *v1.get_mut(0).unwrap() = 200;
+        *v2.get_mut(1).unwrap() = 600;
 
         assert_eq!(data, [10, 200, 30, 400, 50, 600, 70]);
     }
@@ -633,7 +650,7 @@ mod tests {
         assert_eq!(views[2].len(), 0); // empty slot
         assert_eq!(views[3].len(), 0); // empty slot
 
-        assert_eq!(views[0][0], 1);
-        assert_eq!(views[1][0], 2);
+        assert_eq!(views[0].get(0), Some(&1));
+        assert_eq!(views[1].get(0), Some(&2));
     }
 }

@@ -9,6 +9,7 @@ default = []
 alloc = ["raw-storage/alloc", "strided-mem/alloc"]
 std = ["alloc", "raw-storage/std", "strided-mem/std"]
 verbose-errors = ["raw-storage/verbose-errors", "strided-mem/verbose-errors"]
+ffi = []
 
 [dependencies]
 raw-storage = { path = "../raw-storage", default-features = false }

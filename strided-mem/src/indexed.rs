@@ -1,5 +1,4 @@
 use core::marker::PhantomData;
-use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
 
 #[cfg(feature = "alloc")]
@@ -35,67 +34,63 @@ impl<'a, T> IndexedViewMut<'a, T> {
     }
 
     /// Returns the number of indices in this view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.indices.len()
     }
 
     /// Returns `true` if this view contains no indices.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.indices.is_empty()
     }
 
     /// Returns the slice of indices represented by this view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn indices(&self) -> &'a [usize] {
         self.indices
     }
 
     /// Returns an immutable reference to the element at view `index`, or `None` if out of bounds.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get(&self, index: usize) -> Option<&T> {
         if index >= self.indices.len() {
             None
         } else {
-            let target_idx = self.indices[index];
+            let target_idx = *self.indices.get(index)?;
             unsafe { Some(&*self.ptr.as_ptr().add(target_idx)) }
         }
     }
 
     /// Returns a mutable reference to the element at view `index`, or `None` if out of bounds.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if index >= self.indices.len() {
             None
         } else {
-            let target_idx = self.indices[index];
+            let target_idx = *self.indices.get(index)?;
             unsafe { Some(&mut *self.ptr.as_ptr().add(target_idx)) }
         }
-    }
-}
-
-impl<'a, T> Index<usize> for IndexedViewMut<'a, T> {
-    type Output = T;
-
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        if index >= self.indices.len() {
-            panic!("index {} out of bounds for IndexedViewMut of length {}", index, self.indices.len());
-        }
-        let target_idx = self.indices[index];
-        unsafe { &*self.ptr.as_ptr().add(target_idx) }
-    }
-}
-
-impl<'a, T> IndexMut<usize> for IndexedViewMut<'a, T> {
-    #[inline(always)]
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        if index >= self.indices.len() {
-            panic!("index {} out of bounds for IndexedViewMut of length {}", index, self.indices.len());
-        }
-        let target_idx = self.indices[index];
-        unsafe { &mut *self.ptr.as_ptr().add(target_idx) }
     }
 }
 
@@ -142,7 +137,7 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
         }
         all_indices.sort_unstable();
         for i in 1..all_indices.len() {
-            if all_indices[i] == all_indices[i - 1] {
+            if all_indices.get(i) == all_indices.get(i - 1) && all_indices.get(i).is_some() {
                 #[cfg(feature = "verbose-errors")]
                 {
                     return Err(StridedError::OverlapDetected {
@@ -164,35 +159,20 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
             let mut buf = [0usize; 128];
             let mut offset = 0;
             for set in &index_sets {
-                buf[offset..offset + set.len()].copy_from_slice(set);
+                if let Some(target) = buf.get_mut(offset..offset + set.len()) {
+                    target.copy_from_slice(set);
+                }
                 offset += set.len();
             }
-            let active_buf = &mut buf[..total_m];
-            active_buf.sort_unstable();
-            for i in 1..active_buf.len() {
-                if active_buf[i] == active_buf[i - 1] {
-                    #[cfg(feature = "verbose-errors")]
-                    {
-                        return Err(StridedError::OverlapDetected {
-                        offset1: active_buf[i - 1],
-                        offset2: active_buf[i],
-                        });
-                    }
-                    #[cfg(not(feature = "verbose-errors"))]
-                    {
-                        return Err(StridedError::OverlapDetected);
-                    }
-                }
-            }
-        } else {
-            for i in 0..index_sets.len() {
-                for (elem_idx, &idx1) in index_sets[i].iter().enumerate() {
-                    if index_sets[i][elem_idx + 1..].contains(&idx1) {
+            if let Some(active_buf) = buf.get_mut(..total_m) {
+                active_buf.sort_unstable();
+                for i in 1..active_buf.len() {
+                    if active_buf.get(i) == active_buf.get(i - 1) && active_buf.get(i).is_some() {
                         #[cfg(feature = "verbose-errors")]
                         {
                             return Err(StridedError::OverlapDetected {
-                                offset1: idx1,
-                                offset2: idx1,
+                                offset1: active_buf[i - 1],
+                                offset2: active_buf[i],
                             });
                         }
                         #[cfg(not(feature = "verbose-errors"))]
@@ -200,8 +180,13 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
                             return Err(StridedError::OverlapDetected);
                         }
                     }
-                    for j in (i + 1)..index_sets.len() {
-                        if index_sets[j].contains(&idx1) {
+                }
+            }
+        } else {
+            for i in 0..index_sets.len() {
+                if let Some(set_i) = index_sets.get(i) {
+                    for (elem_idx, &idx1) in set_i.iter().enumerate() {
+                        if set_i.get(elem_idx + 1..).map_or(false, |s| s.contains(&idx1)) {
                             #[cfg(feature = "verbose-errors")]
                             {
                                 return Err(StridedError::OverlapDetected {
@@ -212,6 +197,21 @@ pub fn split_indexed_mut<'a, T, const K: usize>(
                             #[cfg(not(feature = "verbose-errors"))]
                             {
                                 return Err(StridedError::OverlapDetected);
+                            }
+                        }
+                        for j in (i + 1)..index_sets.len() {
+                            if index_sets.get(j).map_or(false, |s| s.contains(&idx1)) {
+                                #[cfg(feature = "verbose-errors")]
+                                {
+                                    return Err(StridedError::OverlapDetected {
+                                        offset1: idx1,
+                                        offset2: idx1,
+                                    });
+                                }
+                                #[cfg(not(feature = "verbose-errors"))]
+                                {
+                                    return Err(StridedError::OverlapDetected);
+                                }
                             }
                         }
                     }
@@ -245,8 +245,8 @@ mod tests {
         assert_eq!(v1.len(), 2);
         assert_eq!(v2.len(), 3);
 
-        v1[1] = 99;
-        v2[2] = 88;
+        *v1.get_mut(1).unwrap() = 99;
+        *v2.get_mut(2).unwrap() = 88;
 
         assert_eq!(v1.get(0), Some(&10));
         assert_eq!(v1.get(2), None);

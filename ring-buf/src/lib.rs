@@ -6,6 +6,8 @@
 pub mod cbuf;
 pub mod cbuf2n;
 pub mod error;
+#[cfg(feature = "ffi")]
+pub mod ffi;
 pub mod filter;
 pub mod iter;
 pub mod math;
@@ -22,6 +24,8 @@ pub mod view2n;
 pub use cbuf::CBuf;
 pub use cbuf2n::CBuf2N;
 pub use error::{Result, RingBufError};
+#[cfg(feature = "ffi")]
+pub use ffi::FfiError;
 pub use filter::FilterBank;
 pub use iter::{CBufIter, CBufIterMut};
 pub use stack::CBufStack;

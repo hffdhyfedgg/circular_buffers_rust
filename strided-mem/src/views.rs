@@ -1,5 +1,4 @@
 use core::marker::PhantomData;
-use core::ops::{Index, IndexMut};
 use core::ptr::NonNull;
 use raw_storage::{Storage, StorageMut};
 
@@ -44,39 +43,68 @@ impl<'a, T> StridedView<'a, T> {
     }
 
     /// Creates a [`StridedView`] with `stride = 1` from a contiguous immutable slice.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn from_slice(slice: &'a [T]) -> Self {
         let len = slice.len();
-        let ptr = NonNull::new(slice.as_ptr() as *mut T).unwrap_or_else(NonNull::dangling);
+        let ptr = if len == 0 {
+            NonNull::dangling()
+        } else {
+            // SAFETY: slice is non-empty, so slice.as_ptr() is non-null.
+            unsafe { NonNull::new_unchecked(slice.as_ptr() as *mut T) }
+        };
         // SAFETY: slice.as_ptr() is valid for slice.len() elements with stride 1.
         unsafe { Self::new_unchecked(ptr, 1, len) }
     }
 
     /// Returns the number of elements accessible in this view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Returns `true` if the view contains no elements.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Returns the stride (step size) between elements.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn stride(&self) -> usize {
         self.stride
     }
 
     /// Returns the raw pointer to the base element of the view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const T {
         self.ptr.as_ptr()
     }
 
     /// Returns an immutable reference to the element at `index`, or `None` if out of bounds.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get(&self, index: usize) -> Option<&'a T> {
         if index >= self.len {
@@ -90,6 +118,10 @@ impl<'a, T> StridedView<'a, T> {
     }
 
     /// Returns an iterator over immutable references in this view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn iter(&self) -> StridedIter<'a, T> {
         StridedIter::new(self.ptr, self.stride, self.len)
@@ -124,45 +156,78 @@ impl<'a, T> StridedViewMut<'a, T> {
     }
 
     /// Creates a [`StridedViewMut`] with `stride = 1` from a contiguous mutable slice.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn from_mut_slice(slice: &'a mut [T]) -> Self {
         let len = slice.len();
-        let ptr = NonNull::new(slice.as_mut_ptr()).unwrap_or_else(NonNull::dangling);
+        let ptr = if len == 0 {
+            NonNull::dangling()
+        } else {
+            // SAFETY: slice is non-empty, so slice.as_mut_ptr() is non-null.
+            unsafe { NonNull::new_unchecked(slice.as_mut_ptr()) }
+        };
         // SAFETY: slice.as_mut_ptr() is valid for slice.len() elements with stride 1.
         unsafe { Self::new_unchecked(ptr, 1, len) }
     }
 
     /// Returns the number of elements accessible in this view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Returns `true` if the view contains no elements.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Returns the stride (step size) between elements.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn stride(&self) -> usize {
         self.stride
     }
 
     /// Returns the raw pointer to the base element of the view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_ptr(&self) -> *const T {
         self.ptr.as_ptr()
     }
 
     /// Returns the raw mutable pointer to the base element of the view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_mut_ptr(&mut self) -> *mut T {
         self.ptr.as_ptr()
     }
 
     /// Returns an immutable reference to the element at `index`, or `None` if out of bounds.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get(&self, index: usize) -> Option<&T> {
         if index >= self.len {
@@ -176,6 +241,10 @@ impl<'a, T> StridedViewMut<'a, T> {
     }
 
     /// Returns a mutable reference to the element at `index`, or `None` if out of bounds.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if index >= self.len {
@@ -189,6 +258,10 @@ impl<'a, T> StridedViewMut<'a, T> {
     }
 
     /// Reborrows `self` as an immutable [`StridedView`].
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_view(&self) -> StridedView<'_, T> {
         // SAFETY: self.ptr is valid for self.len elements with self.stride, and &self guarantees no concurrent mutability.
@@ -196,6 +269,10 @@ impl<'a, T> StridedViewMut<'a, T> {
     }
 
     /// Reborrows `self` as a shorter-lived mutable [`StridedViewMut`].
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn reborrow(&mut self) -> StridedViewMut<'_, T> {
         // SAFETY: self.ptr is valid for self.len elements with self.stride, and &mut self guarantees exclusive access.
@@ -203,40 +280,23 @@ impl<'a, T> StridedViewMut<'a, T> {
     }
 
     /// Returns an iterator over immutable references in this view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn iter(&self) -> StridedIter<'_, T> {
         StridedIter::new(self.ptr, self.stride, self.len)
     }
 
     /// Returns an iterator over mutable references in this view.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline]
     pub fn iter_mut(&mut self) -> StridedIterMut<'_, T> {
         StridedIterMut::new(self.ptr, self.stride, self.len)
-    }
-}
-
-impl<'a, T> Index<usize> for StridedView<'a, T> {
-    type Output = T;
-
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        self.get(index).expect("index out of bounds")
-    }
-}
-
-impl<'a, T> Index<usize> for StridedViewMut<'a, T> {
-    type Output = T;
-
-    #[inline(always)]
-    fn index(&self, index: usize) -> &Self::Output {
-        self.get(index).expect("index out of bounds")
-    }
-}
-
-impl<'a, T> IndexMut<usize> for StridedViewMut<'a, T> {
-    #[inline(always)]
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        self.get_mut(index).expect("index out of bounds")
     }
 }
 
@@ -410,15 +470,15 @@ mod tests {
         let mut data = [10, 20, 30, 40];
         let mut view_mut = StridedViewMut::from_mut_slice(&mut data);
 
-        assert_eq!(view_mut[0], 10);
-        view_mut[1] = 200;
-        assert_eq!(view_mut[1], 200);
+        assert_eq!(view_mut.get(0), Some(&10));
+        *view_mut.get_mut(1).unwrap() = 200;
+        assert_eq!(view_mut.get(1), Some(&200));
 
         let view = view_mut.as_view();
         let view_copy = view; // Test Copy
         let view_clone = view.clone(); // Test Clone
-        assert_eq!(view_copy[1], 200);
-        assert_eq!(view_clone[1], 200);
+        assert_eq!(view_copy.get(1), Some(&200));
+        assert_eq!(view_clone.get(1), Some(&200));
 
         // Test iterators
         let sum: i32 = view.iter().sum();
@@ -429,21 +489,5 @@ mod tests {
         }
         assert_eq!(data[0], 11);
         assert_eq!(data[1], 201);
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_view_index_out_of_bounds_panic() {
-        let data = [1, 2, 3];
-        let view = StridedView::from_slice(&data);
-        let _ = view[3];
-    }
-
-    #[test]
-    #[should_panic]
-    fn test_view_mut_index_out_of_bounds_panic() {
-        let mut data = [1, 2, 3];
-        let view = StridedViewMut::from_mut_slice(&mut data);
-        let _ = view[3];
     }
 }

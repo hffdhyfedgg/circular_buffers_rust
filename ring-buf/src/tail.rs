@@ -47,6 +47,10 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
     ///
     /// # Errors
     /// Returns [`RingBufError::InvalidTailLength`] if `new_tail_len > capacity`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     pub fn resize_tail(&mut self, new_tail_len: usize) -> Result<()> {
         if new_tail_len > self.capacity {
             #[cfg(feature = "verbose-errors")]
@@ -62,46 +66,77 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
     }
 
     /// Returns the effective length accessible for reading: `min(len, capacity - tail_len)`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn effective_len(&self) -> usize {
         self.len.min(self.capacity - self.tail_len)
     }
 
     /// Returns the tail length.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn tail_len(&self) -> usize {
         self.tail_len
     }
 
     /// Returns the raw number of elements stored.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Returns the capacity.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
     /// Returns `true` if effective length is 0.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.effective_len() == 0
     }
 
     /// Pushes an item into full capacity without tail restriction.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn push(&mut self, item: T) {
         self.head = math::next_head(self.head, self.capacity);
-        self.storage.as_mut_slice()[self.head] = item;
+        debug_assert!(self.head < self.capacity);
+        if let Some(slot) = self.storage.as_mut_slice().get_mut(self.head) {
+            *slot = item;
+        }
         if self.len < self.capacity {
             self.len += 1;
         }
     }
 
     /// Clears buffer state.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
@@ -109,6 +144,10 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
     }
 
     /// Returns reference to element at relative index `rel` (limited to effective length).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get(&self, rel: usize) -> Option<&T> {
         let eff = self.effective_len();
@@ -116,11 +155,28 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
             None
         } else {
             let phys = math::phys_index(self.head, self.capacity, rel);
-            Some(&self.storage.as_slice()[phys])
+            debug_assert!(phys < self.capacity);
+            self.storage.as_slice().get(phys)
         }
     }
 
+    /// Returns reference to element using a signed relative index (limited to effective length).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
+    #[inline(always)]
+    pub fn get_rel(&self, rel: isize) -> Option<&T> {
+        let eff = self.effective_len();
+        let idx = math::rel_to_index(rel, eff)?;
+        self.get(idx)
+    }
+
     /// Returns mutable reference to element at relative index `rel` (limited to effective length).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get_mut(&mut self, rel: usize) -> Option<&mut T> {
         let eff = self.effective_len();
@@ -128,17 +184,38 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
             None
         } else {
             let phys = math::phys_index(self.head, self.capacity, rel);
-            Some(&mut self.storage.as_mut_slice()[phys])
+            debug_assert!(phys < self.capacity);
+            self.storage.as_mut_slice().get_mut(phys)
         }
     }
 
+    /// Returns mutable reference to element using a signed relative index (limited to effective length).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
+    #[inline(always)]
+    pub fn get_rel_mut(&mut self, rel: isize) -> Option<&mut T> {
+        let eff = self.effective_len();
+        let idx = math::rel_to_index(rel, eff)?;
+        self.get_mut(idx)
+    }
+
     /// Returns data in logical order (limited to effective length) as up to two continuous slices.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_slices(&self) -> (&[T], &[T]) {
         math::as_slices(self.storage.as_slice(), self.head, self.effective_len(), self.capacity)
     }
 
     /// Returns data in logical order (limited to effective length) as up to two continuous mutable slices.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_slices_mut(&mut self) -> (&mut [T], &mut [T]) {
         let eff = self.effective_len();
@@ -146,6 +223,10 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
     }
 
     /// Returns iterator over effective elements in logical order.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn iter(&self) -> CBufIter<'_, T> {
         let (s1, s2) = self.as_slices();
@@ -153,12 +234,20 @@ impl<T, S: StorageMut<Item = T>> CBufTail<T, S> {
     }
 
     /// Returns iterator over effective elements in reverse logical order (newest -> oldest).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn iter_newest_first(&self) -> Rev<CBufIter<'_, T>> {
         self.iter().rev()
     }
 
     /// Returns mutable iterator over effective elements in logical order.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn iter_mut(&mut self) -> CBufIterMut<'_, T> {
         let (s1, s2) = self.as_slices_mut();
@@ -193,6 +282,10 @@ mod tests {
         assert_eq!(tail_buf.get(2), Some(&30));
         assert_eq!(tail_buf.get(3), None);
 
+        assert_eq!(tail_buf.get_rel(-1), Some(&30));
+        assert_eq!(tail_buf.get_rel(-3), Some(&50));
+        assert_eq!(tail_buf.get_rel(-4), None);
+
         let mut rev = [0i32; 3];
         for (i, v) in tail_buf.iter_newest_first().copied().enumerate() {
             rev[i] = v;
@@ -202,5 +295,6 @@ mod tests {
         tail_buf.resize_tail(1).unwrap();
         assert_eq!(tail_buf.effective_len(), 4);
         assert_eq!(tail_buf.get(3), Some(&20));
+        assert_eq!(tail_buf.get_rel(-1), Some(&20));
     }
 }

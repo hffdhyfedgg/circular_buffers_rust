@@ -22,6 +22,8 @@ pub enum StridedError {
     },
     /// Encountered a null or unaligned pointer.
     NullPointer,
+    /// Underlying raw storage error.
+    StorageError(raw_storage::StorageError),
 }
 
 /// Errors that can occur during strided memory operations.
@@ -36,6 +38,15 @@ pub enum StridedError {
     OutOfBounds,
     /// Encountered a null or unaligned pointer.
     NullPointer,
+    /// Underlying raw storage error.
+    StorageError(raw_storage::StorageError),
+}
+
+impl From<raw_storage::StorageError> for StridedError {
+    #[inline]
+    fn from(err: raw_storage::StorageError) -> Self {
+        StridedError::StorageError(err)
+    }
 }
 
 impl fmt::Display for StridedError {
@@ -61,11 +72,20 @@ impl fmt::Display for StridedError {
             StridedError::OutOfBounds => write!(f, "out of bounds"),
 
             StridedError::NullPointer => write!(f, "null pointer"),
+
+            StridedError::StorageError(err) => write!(f, "{}", err),
         }
     }
 }
 
-impl core::error::Error for StridedError {}
+impl core::error::Error for StridedError {
+    fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
+        match self {
+            StridedError::StorageError(err) => Some(err),
+            _ => None,
+        }
+    }
+}
 
 /// A specialized [`Result`](core::result::Result) type for strided memory operations.
 pub type Result<T> = core::result::Result<T, StridedError>;
@@ -92,5 +112,16 @@ mod tests {
             let s = format!("{}", err);
             assert_eq!(s, "out of bounds");
         }
+    }
+
+    #[test]
+    fn test_from_storage_error() {
+        #[cfg(feature = "verbose-errors")]
+        let storage_err = raw_storage::StorageError::ResizeFailed { requested: 10, current: 5 };
+        #[cfg(not(feature = "verbose-errors"))]
+        let storage_err = raw_storage::StorageError::ResizeFailed;
+
+        let strided_err: StridedError = storage_err.into();
+        assert!(matches!(strided_err, StridedError::StorageError(_)));
     }
 }
