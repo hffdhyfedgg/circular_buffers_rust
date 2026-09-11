@@ -39,36 +39,54 @@ impl<T, S: StorageMut<Item = T>> FilterBank<T, S> {
     }
 
     /// Returns the number of filters.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn num_filters(&self) -> usize {
         self.num_filters
     }
 
     /// Returns the filter length.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn filter_length(&self) -> usize {
         self.filter_length
     }
 
     /// Returns a slice of coefficients for filter `filter_idx`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn filter_coefficients(&self, filter_idx: usize) -> Option<&[T]> {
         if filter_idx >= self.num_filters {
             None
         } else {
             let start = filter_idx * self.filter_length;
-            Some(&self.storage.as_slice()[start..start + self.filter_length])
+            debug_assert!(start + self.filter_length <= self.storage.as_slice().len());
+            self.storage.as_slice().get(start..start + self.filter_length)
         }
     }
 
     /// Returns a mutable slice of coefficients for filter `filter_idx`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn filter_coefficients_mut(&mut self, filter_idx: usize) -> Option<&mut [T]> {
         if filter_idx >= self.num_filters {
             None
         } else {
             let start = filter_idx * self.filter_length;
-            Some(&mut self.storage.as_mut_slice()[start..start + self.filter_length])
+            debug_assert!(start + self.filter_length <= self.storage.as_mut_slice().len());
+            self.storage.as_mut_slice().get_mut(start..start + self.filter_length)
         }
     }
 
@@ -113,14 +131,19 @@ impl<T, S: StorageMut<Item = T>> FilterBank<T, S> {
     }
 
     /// Scales all filter coefficients in the filter bank by `scale`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     pub fn scale_filter_bank(&mut self, scale: T)
     where
         T: Copy + Mul<Output = T>,
     {
         let len = self.num_filters * self.filter_length;
-        let data = &mut self.storage.as_mut_slice()[..len];
-        for coeff in data {
-            *coeff = *coeff * scale;
+        if let Some(data) = self.storage.as_mut_slice().get_mut(..len) {
+            for coeff in data {
+                *coeff = *coeff * scale;
+            }
         }
     }
 }

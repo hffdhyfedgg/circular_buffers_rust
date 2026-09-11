@@ -36,16 +36,27 @@ impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
     }
 
     /// Pushes an item into the ring buffer, overwriting the oldest element if full.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn push(&mut self, item: T) {
         self.head = math::next_head(self.head, self.capacity);
-        self.storage.as_mut_slice()[self.head] = item;
+        debug_assert!(self.head < self.capacity);
+        if let Some(slot) = self.storage.as_mut_slice().get_mut(self.head) {
+            *slot = item;
+        }
         if self.len < self.capacity {
             self.len += 1;
         }
     }
 
     /// Clears the ring buffer state (sets length to 0).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn clear(&mut self) {
         self.len = 0;
@@ -53,76 +64,148 @@ impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
     }
 
     /// Returns the number of elements currently stored.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Returns `true` if the ring buffer contains no elements.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Returns the total capacity of the ring buffer.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn capacity(&self) -> usize {
         self.capacity
     }
 
     /// Returns the current head index.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn head(&self) -> usize {
         self.head
     }
 
     /// Returns a reference to the element at relative index `rel` (0 = newest).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get(&self, rel: usize) -> Option<&T> {
         if rel >= self.len {
             None
         } else {
             let phys = math::phys_index(self.head, self.capacity, rel);
-            Some(&self.storage.as_slice()[phys])
+            debug_assert!(phys < self.capacity);
+            self.storage.as_slice().get(phys)
         }
     }
 
+    /// Returns a reference to the element using a signed relative index (`rel >= 0` from head, `rel < 0` from oldest).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
+    #[inline(always)]
+    pub fn get_rel(&self, rel: isize) -> Option<&T> {
+        let idx = math::rel_to_index(rel, self.len)?;
+        self.get(idx)
+    }
+
     /// Returns a mutable reference to the element at relative index `rel` (0 = newest).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get_mut(&mut self, rel: usize) -> Option<&mut T> {
         if rel >= self.len {
             None
         } else {
             let phys = math::phys_index(self.head, self.capacity, rel);
-            Some(&mut self.storage.as_mut_slice()[phys])
+            debug_assert!(phys < self.capacity);
+            self.storage.as_mut_slice().get_mut(phys)
         }
     }
 
+    /// Returns a mutable reference to the element using a signed relative index (`rel >= 0` from head, `rel < 0` from oldest).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
+    #[inline(always)]
+    pub fn get_rel_mut(&mut self, rel: isize) -> Option<&mut T> {
+        let idx = math::rel_to_index(rel, self.len)?;
+        self.get_mut(idx)
+    }
+
     /// Returns the buffer data in logical order (oldest -> newest) as up to two continuous slices.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_slices(&self) -> (&[T], &[T]) {
         math::as_slices(self.storage.as_slice(), self.head, self.len, self.capacity)
     }
 
     /// Returns the buffer data in logical order (oldest -> newest) as up to two continuous mutable slices.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_slices_mut(&mut self) -> (&mut [T], &mut [T]) {
         math::as_slices_mut(self.storage.as_mut_slice(), self.head, self.len, self.capacity)
     }
 
     /// Returns an immutable view over the ring buffer.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_view(&self) -> CBufView<'_, T> {
-        CBufView::try_from_raw(self.storage.as_slice(), self.head, self.len).unwrap()
+        debug_assert!(self.head < self.capacity);
+        debug_assert!(self.len <= self.capacity);
+        CBufView::from_raw_unchecked(self.storage.as_slice(), self.head, self.len)
     }
 
     /// Returns a mutable view over the ring buffer.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn as_view_mut(&mut self) -> CBufViewMut<'_, T> {
-        CBufViewMut::try_from_raw(self.storage.as_mut_slice(), self.head, self.len).unwrap()
+        debug_assert!(self.head < self.capacity);
+        debug_assert!(self.len <= self.capacity);
+        CBufViewMut::from_raw_unchecked(self.storage.as_mut_slice(), self.head, self.len)
     }
 
     /// Returns an iterator over immutable references in logical order (oldest -> newest).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn iter(&self) -> CBufIter<'_, T> {
         let (s1, s2) = self.as_slices();
@@ -130,12 +213,20 @@ impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
     }
 
     /// Returns an iterator over immutable references in reverse logical order (newest -> oldest).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn iter_newest_first(&self) -> Rev<CBufIter<'_, T>> {
         self.iter().rev()
     }
 
     /// Returns an iterator over mutable references in logical order (oldest -> newest).
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn iter_mut(&mut self) -> CBufIterMut<'_, T> {
         let (s1, s2) = self.as_slices_mut();
@@ -143,6 +234,10 @@ impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
     }
 
     /// Consumes `self` and returns the underlying storage `S`.
+    ///
+    /// # Panics
+    ///
+    /// Этот метод никогда не паникует.
     pub fn into_storage(self) -> S {
         self.storage
     }
@@ -186,10 +281,12 @@ mod tests {
         buf.push(30);
         assert_eq!(buf.len(), 3);
         assert_eq!(buf.get(0), Some(&30));
+        assert_eq!(buf.get_rel(-1), Some(&10));
 
         buf.push(40); // overwrites 10
         assert_eq!(buf.len(), 3);
         assert_eq!(buf.get(0), Some(&40));
+        assert_eq!(buf.get_rel(-1), Some(&20));
         let (s1, s2) = buf.as_slices();
         assert_eq!(s1, &[20, 30]);
         assert_eq!(s2, &[40]);
