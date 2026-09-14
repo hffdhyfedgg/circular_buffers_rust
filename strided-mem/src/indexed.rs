@@ -5,6 +5,7 @@ use core::ptr::NonNull;
 extern crate alloc;
 
 use crate::error::{Result, StridedError};
+use crate::traits::{View, ViewMut};
 
 /// A mutable view over arbitrary non-overlapping indexed elements.
 #[derive(Debug)]
@@ -85,6 +86,37 @@ impl<'a, T> IndexedViewMut<'a, T> {
     /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        if index >= self.indices.len() {
+            None
+        } else {
+            let target_idx = *self.indices.get(index)?;
+            unsafe { Some(&mut *self.ptr.as_ptr().add(target_idx)) }
+        }
+    }
+}
+
+impl<'a, T> View<'a> for IndexedViewMut<'a, T> {
+    type Item = T;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    #[inline(always)]
+    fn get(&self, index: usize) -> Option<&'a T> {
+        if index >= self.indices.len() {
+            None
+        } else {
+            let target_idx = *self.indices.get(index)?;
+            unsafe { Some(&*self.ptr.as_ptr().add(target_idx)) }
+        }
+    }
+}
+
+impl<'a, T> ViewMut<'a> for IndexedViewMut<'a, T> {
+    #[inline(always)]
+    fn get_mut(&mut self, index: usize) -> Option<&mut T> {
         if index >= self.indices.len() {
             None
         } else {

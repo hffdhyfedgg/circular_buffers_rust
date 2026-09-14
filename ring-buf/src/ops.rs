@@ -101,15 +101,13 @@ pub fn select<'a, T: 'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::view2n::CBuf2NViewMut;
+    use crate::cbuf::CBuf;
+    use raw_storage::ArrayStorage;
 
     #[test]
     fn test_ops_on_view() {
-        let mut mem1 = [0f32; 4];
-        let mut mem2 = [0f32; 4];
-
-        let mut v1 = CBuf2NViewMut::try_new(&mut mem1).unwrap();
-        let mut v2 = CBuf2NViewMut::try_new(&mut mem2).unwrap();
+        let mut v1 = CBuf::try_new_2n(ArrayStorage::<f32, 4>::default()).unwrap();
+        let mut v2 = CBuf::try_new_2n(ArrayStorage::<f32, 4>::default()).unwrap();
 
         v1.push(1.0);
         v1.push(2.0);
