@@ -26,6 +26,7 @@ impl<'a, T> PtrStorage<'a, T> {
     /// # Panics
     ///
     /// Этот метод никогда не паникует.
+    #[allow(unsafe_code)]
     pub unsafe fn from_raw_parts(ptr: *mut T, len: usize) -> Self {
         let ptr = match NonNull::new(ptr) {
             Some(p) => p,
@@ -110,6 +111,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(unsafe_code)]
     fn test_ptr_storage_read_write() {
         let mut data = [10, 20, 30, 40];
         let mut storage = unsafe { PtrStorage::from_raw_parts(data.as_mut_ptr(), data.len()) };
@@ -124,6 +126,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn test_ptr_storage_zero_len() {
         let mut storage = unsafe { PtrStorage::<i32>::from_raw_parts(core::ptr::null_mut(), 0) };
 

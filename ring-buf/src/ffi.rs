@@ -20,8 +20,6 @@ pub enum FfiError {
     NotSupported = -7,
     /// Ring buffer is empty (-10).
     BufferEmpty = -10,
-    /// Ring buffer is full (-11).
-    BufferFull = -11,
 }
 
 impl From<FfiError> for i32 {
@@ -92,7 +90,6 @@ mod tests {
         assert_eq!(i32::from(FfiError::NotFound), -4);
         assert_eq!(i32::from(FfiError::NotSupported), -7);
         assert_eq!(i32::from(FfiError::BufferEmpty), -10);
-        assert_eq!(i32::from(FfiError::BufferFull), -11);
 
         let err: FfiError = RingBufError::BufferEmpty.into();
         assert_eq!(err, FfiError::BufferEmpty);
