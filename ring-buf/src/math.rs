@@ -27,6 +27,19 @@ pub fn rel_to_index(rel: isize, len: usize) -> Option<usize> {
     }
 }
 
+/// Циклическое отображение произвольного знакового индекса
+/// в диапазон `[0, len)`.
+///
+/// # Panics
+/// Паникует если `len == 0`.
+#[inline(always)]
+pub fn wrap_index(rel: isize, len: usize) -> usize {
+    debug_assert!(len > 0);
+    let len_i = len as isize;
+    let r = rel.rem_euclid(len_i);
+    r as usize
+}
+
 /// Calculates the physical memory index for relative index `rel` (where 0 is newest)
 /// for arbitrary capacity buffers.
 ///
@@ -121,16 +134,17 @@ pub fn as_slices<T>(data: &[T], head: usize, len: usize, capacity: usize) -> (&[
     if len == 0 || data.is_empty() {
         return (&[], &[]);
     }
+    debug_assert!(data.len() >= capacity);
     let oldest = oldest_index(head, capacity, len);
     if oldest + len <= capacity {
-        (data.get(oldest..oldest + len).unwrap_or(&[]), &[])
+        debug_assert!(oldest + len <= data.len());
+        (&data[oldest..oldest + len], &[])
     } else {
         let first_len = capacity - oldest;
         let second_len = len - first_len;
-        (
-            data.get(oldest..capacity).unwrap_or(&[]),
-            data.get(..second_len).unwrap_or(&[]),
-        )
+        debug_assert!(first_len <= data.len() - oldest);
+        debug_assert!(second_len <= oldest);
+        (&data[oldest..capacity], &data[..second_len])
     }
 }
 
@@ -150,10 +164,11 @@ pub fn as_slices_mut<T>(
     if len == 0 || data.is_empty() {
         return (&mut [], &mut []);
     }
+    debug_assert!(data.len() >= capacity);
     let oldest = oldest_index(head, capacity, len);
     if oldest + len <= capacity {
-        let slice = data.get_mut(oldest..oldest + len).unwrap_or(&mut []);
-        (slice, &mut [])
+        debug_assert!(oldest + len <= data.len());
+        (&mut data[oldest..oldest + len], &mut [])
     } else {
         let first_len = capacity - oldest;
         let second_len = len - first_len;
@@ -243,16 +258,17 @@ pub fn as_slices_2n<T>(
     if len == 0 || data.is_empty() {
         return (&[], &[]);
     }
+    debug_assert!(data.len() >= capacity);
     let oldest = oldest_index_2n(head, capacity, len, mask);
     if oldest + len <= capacity {
-        (data.get(oldest..oldest + len).unwrap_or(&[]), &[])
+        debug_assert!(oldest + len <= data.len());
+        (&data[oldest..oldest + len], &[])
     } else {
         let first_len = capacity - oldest;
         let second_len = len - first_len;
-        (
-            data.get(oldest..capacity).unwrap_or(&[]),
-            data.get(..second_len).unwrap_or(&[]),
-        )
+        debug_assert!(first_len <= data.len() - oldest);
+        debug_assert!(second_len <= oldest);
+        (&data[oldest..capacity], &data[..second_len])
     }
 }
 
@@ -273,10 +289,11 @@ pub fn as_slices_mut_2n<T>(
     if len == 0 || data.is_empty() {
         return (&mut [], &mut []);
     }
+    debug_assert!(data.len() >= capacity);
     let oldest = oldest_index_2n(head, capacity, len, mask);
     if oldest + len <= capacity {
-        let slice = data.get_mut(oldest..oldest + len).unwrap_or(&mut []);
-        (slice, &mut [])
+        debug_assert!(oldest + len <= data.len());
+        (&mut data[oldest..oldest + len], &mut [])
     } else {
         let first_len = capacity - oldest;
         let second_len = len - first_len;

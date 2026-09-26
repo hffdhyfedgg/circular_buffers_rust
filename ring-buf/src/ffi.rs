@@ -1,4 +1,4 @@
-use crate::error::RingBufError;
+use crate::error::CBufError;
 use strided_mem::StridedError;
 use raw_storage::StorageError;
 
@@ -20,8 +20,6 @@ pub enum FfiError {
     NotSupported = -7,
     /// Ring buffer is empty (-10).
     BufferEmpty = -10,
-    /// Ring buffer is full (-11).
-    BufferFull = -11,
 }
 
 impl From<FfiError> for i32 {
@@ -31,43 +29,43 @@ impl From<FfiError> for i32 {
     }
 }
 
-impl From<RingBufError> for FfiError {
-    fn from(err: RingBufError) -> Self {
+impl From<CBufError> for FfiError {
+    fn from(err: CBufError) -> Self {
         match err {
-            RingBufError::CapacityZero => FfiError::InvalidArg,
+            CBufError::CapacityZero => FfiError::InvalidArg,
             #[cfg(feature = "verbose-errors")]
-            RingBufError::NotPowerOfTwo { .. } => FfiError::InvalidArg,
+            CBufError::NotPowerOfTwo { .. } => FfiError::InvalidArg,
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::NotPowerOfTwo => FfiError::InvalidArg,
-
-            #[cfg(feature = "verbose-errors")]
-            RingBufError::StorageTooSmall { .. } => FfiError::InvalidArg,
-            #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::StorageTooSmall => FfiError::InvalidArg,
+            CBufError::NotPowerOfTwo => FfiError::InvalidArg,
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::ChannelOutOfBounds { .. } => FfiError::InvalidArg,
+            CBufError::StorageTooSmall { .. } => FfiError::InvalidArg,
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::ChannelOutOfBounds => FfiError::InvalidArg,
+            CBufError::StorageTooSmall => FfiError::InvalidArg,
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::InvalidTailLength { .. } => FfiError::InvalidArg,
+            CBufError::ChannelOutOfBounds { .. } => FfiError::InvalidArg,
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::InvalidTailLength => FfiError::InvalidArg,
+            CBufError::ChannelOutOfBounds => FfiError::InvalidArg,
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::FilterLengthMismatch { .. } => FfiError::InvalidArg,
+            CBufError::InvalidTailLength { .. } => FfiError::InvalidArg,
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::FilterLengthMismatch => FfiError::InvalidArg,
-
-            RingBufError::BufferEmpty => FfiError::BufferEmpty,
+            CBufError::InvalidTailLength => FfiError::InvalidArg,
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::StorageError(StorageError::ResizeFailed { .. }) => FfiError::MemAlloc,
+            CBufError::FilterLengthMismatch { .. } => FfiError::InvalidArg,
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::StorageError(StorageError::ResizeFailed) => FfiError::MemAlloc,
+            CBufError::FilterLengthMismatch => FfiError::InvalidArg,
 
-            RingBufError::StridedError(strided_err) => match strided_err {
+            CBufError::BufferEmpty => FfiError::BufferEmpty,
+
+            #[cfg(feature = "verbose-errors")]
+            CBufError::StorageError(StorageError::ResizeFailed { .. }) => FfiError::MemAlloc,
+            #[cfg(not(feature = "verbose-errors"))]
+            CBufError::StorageError(StorageError::ResizeFailed) => FfiError::MemAlloc,
+
+            CBufError::StridedError(strided_err) => match strided_err {
                 StridedError::NullPointer => FfiError::NullPointer,
                 #[cfg(feature = "verbose-errors")]
                 StridedError::StorageError(StorageError::ResizeFailed { .. }) => FfiError::MemAlloc,
@@ -92,12 +90,11 @@ mod tests {
         assert_eq!(i32::from(FfiError::NotFound), -4);
         assert_eq!(i32::from(FfiError::NotSupported), -7);
         assert_eq!(i32::from(FfiError::BufferEmpty), -10);
-        assert_eq!(i32::from(FfiError::BufferFull), -11);
 
-        let err: FfiError = RingBufError::BufferEmpty.into();
+        let err: FfiError = CBufError::BufferEmpty.into();
         assert_eq!(err, FfiError::BufferEmpty);
 
-        let err: FfiError = RingBufError::CapacityZero.into();
+        let err: FfiError = CBufError::CapacityZero.into();
         assert_eq!(err, FfiError::InvalidArg);
 
         #[cfg(feature = "verbose-errors")]
@@ -105,7 +102,7 @@ mod tests {
         #[cfg(not(feature = "verbose-errors"))]
         let storage_err = StorageError::ResizeFailed;
 
-        let err: FfiError = RingBufError::StorageError(storage_err).into();
+        let err: FfiError = CBufError::StorageError(storage_err).into();
         assert_eq!(err, FfiError::MemAlloc);
     }
 }

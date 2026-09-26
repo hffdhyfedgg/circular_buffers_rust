@@ -4,15 +4,15 @@ use crate::traits::{Storage, StorageMut};
 
 /// Storage implementation wrapping a raw pointer.
 ///
-/// Holds a `NonNull<T>`, length, and lifetime marker `PhantomData<&'a mut T>`.
+/// Holds a `NonNull<T>` and length, and lifetime marker `PhantomData<&'a mut T>`.
 #[derive(Debug)]
-pub struct PtrStorage<'a, T> {
+pub struct PtrStorage<T> {
     ptr: NonNull<T>,
     len: usize,
-    _marker: PhantomData<&'a mut T>,
+    _marker: PhantomData<*mut T>,
 }
 
-impl<'a, T> PtrStorage<'a, T> {
+impl<T> PtrStorage<T> {
     /// Creates a new `PtrStorage` from a raw pointer and length.
     ///
     /// # Safety
@@ -26,6 +26,7 @@ impl<'a, T> PtrStorage<'a, T> {
     /// # Panics
     ///
     /// Этот метод никогда не паникует.
+    #[allow(unsafe_code)]
     pub unsafe fn from_raw_parts(ptr: *mut T, len: usize) -> Self {
         let ptr = match NonNull::new(ptr) {
             Some(p) => p,
@@ -39,7 +40,7 @@ impl<'a, T> PtrStorage<'a, T> {
     }
 }
 
-impl<'a, T> Storage for PtrStorage<'a, T> {
+impl<T> Storage for PtrStorage<T> {
     type Item = T;
 
     /// # Panics
@@ -74,7 +75,7 @@ impl<'a, T> Storage for PtrStorage<'a, T> {
     }
 }
 
-impl<'a, T> StorageMut for PtrStorage<'a, T> {
+impl<T> StorageMut for PtrStorage<T> {
     /// Provides access to a mutable slice of stored elements.
     ///
     /// # Panics
@@ -97,19 +98,20 @@ impl<'a, T> StorageMut for PtrStorage<'a, T> {
 ///
 /// `PtrStorage` owns access to `T` for lifetime `'a`. Transferring `PtrStorage` across thread boundaries is safe if `T: Send`.
 #[allow(unsafe_code)]
-unsafe impl<'a, T: Send> Send for PtrStorage<'a, T> {}
+unsafe impl<T: Send> Send for PtrStorage<T> {}
 
 /// # Safety
 ///
 /// `PtrStorage` allows access to `T`. Sharing `PtrStorage` across threads is safe if `T: Sync`.
 #[allow(unsafe_code)]
-unsafe impl<'a, T: Sync> Sync for PtrStorage<'a, T> {}
+unsafe impl<T: Sync> Sync for PtrStorage<T> {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
+    #[allow(unsafe_code)]
     fn test_ptr_storage_read_write() {
         let mut data = [10, 20, 30, 40];
         let mut storage = unsafe { PtrStorage::from_raw_parts(data.as_mut_ptr(), data.len()) };
@@ -124,6 +126,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unsafe_code)]
     fn test_ptr_storage_zero_len() {
         let mut storage = unsafe { PtrStorage::<i32>::from_raw_parts(core::ptr::null_mut(), 0) };
 

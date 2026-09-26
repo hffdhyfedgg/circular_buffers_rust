@@ -1,12 +1,17 @@
 use core::iter::Rev;
 use core::marker::PhantomData;
 use raw_storage::traits::StorageMut;
-use crate::error::{Result, RingBufError};
+use strided_mem::ring_view::{Ring2NView, Ring2NViewMut, RingView, RingViewMut};
+use strided_mem::{StridedView, StridedViewMut};
+
+use crate::error::{CBufResult, CBufError};
 use crate::iter::{CBufIter, CBufIterMut};
 use crate::math;
-use crate::view::{CBufView, CBufViewMut};
 
-/// Owning single ring buffer with arbitrary capacity.
+/// Владеющий кольцевой буфер.
+///
+/// Управление состоянием (head, len) хранится здесь.
+/// Геометрия доступа делегируется представлениям из `strided-mem`.
 #[derive(Debug)]
 pub struct CBuf<T, S> {
     storage: S,
@@ -17,14 +22,38 @@ pub struct CBuf<T, S> {
 }
 
 impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
-    /// Creates a new `CBuf` backed by `storage`.
+    /// Создаёт буфер произвольной ёмкости.
     ///
     /// # Errors
-    /// Returns [`RingBufError::CapacityZero`] if storage capacity is 0.
-    pub fn try_new(mut storage: S) -> Result<Self> {
+    /// `CBufError::CapacityZero` если ёмкость 0.
+    pub fn try_new(mut storage: S) -> CBufResult<Self> {
         let capacity = storage.as_mut_slice().len();
         if capacity == 0 {
-            return Err(RingBufError::CapacityZero);
+            return Err(CBufError::CapacityZero);
+        }
+        Ok(Self {
+            storage,
+            head: capacity - 1,
+            len: 0,
+            capacity,
+            _marker: PhantomData,
+        })
+    }
+
+    /// Создаёт буфер с ёмкостью, степенью двойки.
+    ///
+    /// # Errors
+    /// `CBufError::CapacityZero` или `CBufError::NotPowerOfTwo`.
+    pub fn try_new_2n(mut storage: S) -> CBufResult<Self> {
+        let capacity = storage.as_mut_slice().len();
+        if capacity == 0 {
+            return Err(CBufError::CapacityZero);
+        }
+        if !capacity.is_power_of_two() {
+            #[cfg(feature = "verbose-errors")]
+            return Err(CBufError::NotPowerOfTwo { capacity });
+            #[cfg(not(feature = "verbose-errors"))]
+            return Err(CBufError::NotPowerOfTwo);
         }
         Ok(Self {
             storage,
@@ -42,11 +71,9 @@ impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
     /// Этот метод никогда не паникует.
     #[inline(always)]
     pub fn push(&mut self, item: T) {
-        self.head = math::next_head(self.head, self.capacity);
+        self.head = (self.head + 1) % self.capacity;
         debug_assert!(self.head < self.capacity);
-        if let Some(slot) = self.storage.as_mut_slice().get_mut(self.head) {
-            *slot = item;
-        }
+        self.storage.as_mut_slice()[self.head] = item;
         if self.len < self.capacity {
             self.len += 1;
         }
@@ -104,6 +131,7 @@ impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
     }
 
     /// Returns a reference to the element at relative index `rel` (0 = newest).
+    /// Returns `None` if `rel >= len`.
     ///
     /// # Panics
     ///
@@ -157,6 +185,68 @@ impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
         self.get_mut(idx)
     }
 
+    /// Доступ по относительному индексу с циклическим переносом.
+    ///
+    /// Возвращает `None` только если `self.len == 0`.
+    #[inline(always)]
+    pub fn get_wrapping(&self, rel: isize) -> Option<&T> {
+        if self.len == 0 {
+            return None;
+        }
+        let logical = math::wrap_index(rel, self.len);
+        let phys = math::phys_index(self.head, self.capacity, logical);
+        self.storage.as_slice().get(phys)
+    }
+
+    /// Мутабельный доступ по относительному индексу с циклическим переносом.
+    ///
+    /// Возвращает `None` только если `self.len == 0`.
+    #[inline(always)]
+    pub fn get_wrapping_mut(&mut self, rel: isize) -> Option<&mut T> {
+        if self.len == 0 {
+            return None;
+        }
+        let logical = math::wrap_index(rel, self.len);
+        let phys = math::phys_index(self.head, self.capacity, logical);
+        self.storage.as_mut_slice().get_mut(phys)
+    }
+
+    /// Неизменяемое кольцевое представление произвольной ёмкости.
+    #[inline(always)]
+    pub fn as_ring_view(&self) -> RingView<'_, T, StridedView<'_, T>> {
+        let sv = StridedView::from_slice(self.storage.as_slice());
+        RingView::new_unchecked(sv, self.head, self.len)
+    }
+
+    /// Мутабельное кольцевое представление произвольной ёмкости.
+    #[inline(always)]
+    pub fn as_ring_view_mut(&mut self) -> RingViewMut<'_, T, StridedViewMut<'_, T>> {
+        let sv = StridedViewMut::from_mut_slice(self.storage.as_mut_slice());
+        RingViewMut::new_unchecked(sv, self.head, self.len)
+    }
+
+    /// Неизменяемое кольцевое представление для ёмкости 2N.
+    ///
+    /// # Panics
+    /// `debug_assert!` что `self.capacity.is_power_of_two()`.
+    #[inline(always)]
+    pub fn as_ring2n_view(&self) -> Ring2NView<'_, T, StridedView<'_, T>> {
+        debug_assert!(self.capacity.is_power_of_two());
+        let sv = StridedView::from_slice(self.storage.as_slice());
+        Ring2NView::new_unchecked(sv, self.head, self.len)
+    }
+
+    /// Мутабельное кольцевое представление для ёмкости 2N.
+    ///
+    /// # Panics
+    /// `debug_assert!` что `self.capacity.is_power_of_two()`.
+    #[inline(always)]
+    pub fn as_ring2n_view_mut(&mut self) -> Ring2NViewMut<'_, T, StridedViewMut<'_, T>> {
+        debug_assert!(self.capacity.is_power_of_two());
+        let sv = StridedViewMut::from_mut_slice(self.storage.as_mut_slice());
+        Ring2NViewMut::new_unchecked(sv, self.head, self.len)
+    }
+
     /// Returns the buffer data in logical order (oldest -> newest) as up to two continuous slices.
     ///
     /// # Panics
@@ -175,30 +265,6 @@ impl<T, S: StorageMut<Item = T>> CBuf<T, S> {
     #[inline(always)]
     pub fn as_slices_mut(&mut self) -> (&mut [T], &mut [T]) {
         math::as_slices_mut(self.storage.as_mut_slice(), self.head, self.len, self.capacity)
-    }
-
-    /// Returns an immutable view over the ring buffer.
-    ///
-    /// # Panics
-    ///
-    /// Этот метод никогда не паникует.
-    #[inline(always)]
-    pub fn as_view(&self) -> CBufView<'_, T> {
-        debug_assert!(self.head < self.capacity);
-        debug_assert!(self.len <= self.capacity);
-        CBufView::from_raw_unchecked(self.storage.as_slice(), self.head, self.len)
-    }
-
-    /// Returns a mutable view over the ring buffer.
-    ///
-    /// # Panics
-    ///
-    /// Этот метод никогда не паникует.
-    #[inline(always)]
-    pub fn as_view_mut(&mut self) -> CBufViewMut<'_, T> {
-        debug_assert!(self.head < self.capacity);
-        debug_assert!(self.len <= self.capacity);
-        CBufViewMut::from_raw_unchecked(self.storage.as_mut_slice(), self.head, self.len)
     }
 
     /// Returns an iterator over immutable references in logical order (oldest -> newest).
@@ -296,5 +362,51 @@ mod tests {
             rev[i] = v;
         }
         assert_eq!(rev, [40, 30, 20]);
+    }
+
+    #[test]
+    fn test_cbuf_wrapping_indexing() {
+        let storage = ArrayStorage::<i32, 3>::default();
+        let mut buf = CBuf::try_new(storage).unwrap();
+
+        assert_eq!(buf.get_wrapping(0), None);
+
+        buf.push(10);
+        buf.push(20);
+        buf.push(30);
+        buf.push(40); // len = 3, elements: 0=40, 1=30, 2=20
+
+        assert_eq!(buf.get_wrapping(0), Some(&40));
+        assert_eq!(buf.get_wrapping(3), Some(&40));
+        assert_eq!(buf.get_wrapping(4), Some(&30));
+        assert_eq!(buf.get_wrapping(-1), Some(&20));
+        assert_eq!(buf.get_wrapping(-4), Some(&20));
+    }
+
+    #[test]
+    fn test_cbuf_view_composition() {
+        use strided_mem::traits::View;
+        use strided_mem::{InvertView, TailView};
+
+        let storage = ArrayStorage::<i32, 4>::default();
+        let mut buf = CBuf::try_new_2n(storage).unwrap();
+        buf.push(10);
+        buf.push(20);
+        buf.push(30);
+        buf.push(40); // 0=40, 1=30, 2=20, 3=10
+
+        let ring = buf.as_ring2n_view();
+        assert_eq!(ring.get(0), Some(&40));
+
+        let tail = TailView::try_new(ring, 3).unwrap();
+        assert_eq!(tail.len(), 3);
+        assert_eq!(tail.get(0), Some(&40));
+        assert_eq!(tail.get(2), Some(&20));
+        assert_eq!(tail.get(3), None);
+
+        let inv_tail = InvertView::new(tail);
+        assert_eq!(inv_tail.len(), 3);
+        assert_eq!(inv_tail.get(0), Some(&20));
+        assert_eq!(inv_tail.get(2), Some(&40));
     }
 }

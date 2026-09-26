@@ -267,20 +267,6 @@ impl<'a, T> StridedViewMut<'a, T> {
         Ok(StridedSplitIterMut::new(ptr, stride, len, n))
     }
 
-    /// Dynamically splits a mutable view into `n` sub-views via an iterator.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StridedError::ZeroStride`] if `n == 0`.
-    /// Returns [`StridedError::OutOfBounds`] if `stride * n` overflows `usize`.
-    ///
-    /// # Panics
-    ///
-    /// Этот метод никогда не паникует.
-    #[inline]
-    pub fn try_split_strided_dyn(self, n: usize) -> Result<StridedSplitIterMut<'a, T>> {
-        self.try_split_dyn(n)
-    }
 
     /// Stack-bounded split into `n` sub-views where `n <= MAX_N`.
     ///
@@ -435,20 +421,6 @@ impl<'a, T> StridedView<'a, T> {
         Ok(StridedSplitIter::new(ptr, stride, len, n))
     }
 
-    /// Dynamically splits an immutable view into `n` sub-views via an iterator.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`StridedError::ZeroStride`] if `n == 0`.
-    /// Returns [`StridedError::OutOfBounds`] if `stride * n` overflows `usize`.
-    ///
-    /// # Panics
-    ///
-    /// Этот метод никогда не паникует.
-    #[inline]
-    pub fn try_split_strided_dyn(self, n: usize) -> Result<StridedSplitIter<'a, T>> {
-        self.try_split_dyn(n)
-    }
 
     /// Stack-bounded split into `n` sub-views where `n <= MAX_N`.
     ///

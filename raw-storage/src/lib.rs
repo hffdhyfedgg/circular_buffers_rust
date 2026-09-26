@@ -1,5 +1,5 @@
 #![no_std]
-#![warn(unsafe_code)]
+#![deny(unsafe_code)]
 // Note: `unsafe_code` is warned crate-wide because `unsafe` is strictly restricted to
 // `ptr.rs` with mandatory `/// # Safety` documentation.
 

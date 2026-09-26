@@ -3,7 +3,7 @@ use core::fmt;
 /// Errors that can occur in ring buffer operations.
 #[cfg(feature = "verbose-errors")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RingBufError {
+pub enum CBufError {
     /// Capacity must be greater than zero.
     CapacityZero,
     /// Capacity must be a power of two for 2N variants.
@@ -27,7 +27,7 @@ pub enum RingBufError {
 /// Errors that can occur in ring buffer operations.
 #[cfg(not(feature = "verbose-errors"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RingBufError {
+pub enum CBufError {
     /// Capacity must be greater than zero.
     CapacityZero,
     /// Capacity must be a power of two for 2N variants.
@@ -48,83 +48,83 @@ pub enum RingBufError {
     StridedError(strided_mem::StridedError),
 }
 
-impl From<raw_storage::StorageError> for RingBufError {
+impl From<raw_storage::StorageError> for CBufError {
     #[inline]
     fn from(err: raw_storage::StorageError) -> Self {
-        RingBufError::StorageError(err)
+        CBufError::StorageError(err)
     }
 }
 
-impl From<strided_mem::StridedError> for RingBufError {
+impl From<strided_mem::StridedError> for CBufError {
     #[inline]
     fn from(err: strided_mem::StridedError) -> Self {
-        RingBufError::StridedError(err)
+        CBufError::StridedError(err)
     }
 }
 
-impl fmt::Display for RingBufError {
+impl fmt::Display for CBufError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             #[cfg(feature = "verbose-errors")]
-            RingBufError::CapacityZero => write!(f, "capacity must be greater than zero"),
+            CBufError::CapacityZero => write!(f, "capacity must be greater than zero"),
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::CapacityZero => write!(f, "capacity must be greater than zero"),
+            CBufError::CapacityZero => write!(f, "capacity must be greater than zero"),
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::NotPowerOfTwo { capacity } => {
+            CBufError::NotPowerOfTwo { capacity } => {
                 write!(f, "capacity {} is not a power of two", capacity)
             }
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::NotPowerOfTwo => write!(f, "capacity is not a power of two"),
+            CBufError::NotPowerOfTwo => write!(f, "capacity is not a power of two"),
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::StorageTooSmall { required, actual } => {
+            CBufError::StorageTooSmall { required, actual } => {
                 write!(f, "storage too small: required {}, actual {}", required, actual)
             }
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::StorageTooSmall => write!(f, "storage too small"),
+            CBufError::StorageTooSmall => write!(f, "storage too small"),
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::ChannelOutOfBounds { channel, max_channels } => {
+            CBufError::ChannelOutOfBounds { channel, max_channels } => {
                 write!(f, "channel index {} out of bounds (max {})", channel, max_channels)
             }
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::ChannelOutOfBounds => write!(f, "channel index out of bounds"),
+            CBufError::ChannelOutOfBounds => write!(f, "channel index out of bounds"),
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::InvalidTailLength { tail_len, capacity } => {
+            CBufError::InvalidTailLength { tail_len, capacity } => {
                 write!(f, "invalid tail length {} for capacity {}", tail_len, capacity)
             }
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::InvalidTailLength => write!(f, "invalid tail length"),
+            CBufError::InvalidTailLength => write!(f, "invalid tail length"),
 
             #[cfg(feature = "verbose-errors")]
-            RingBufError::FilterLengthMismatch { expected, actual } => {
+            CBufError::FilterLengthMismatch { expected, actual } => {
                 write!(f, "filter length mismatch: expected {}, actual {}", expected, actual)
             }
             #[cfg(not(feature = "verbose-errors"))]
-            RingBufError::FilterLengthMismatch => write!(f, "filter length mismatch"),
+            CBufError::FilterLengthMismatch => write!(f, "filter length mismatch"),
 
-            RingBufError::BufferEmpty => write!(f, "buffer is empty"),
+            CBufError::BufferEmpty => write!(f, "buffer is empty"),
 
-            RingBufError::StorageError(err) => write!(f, "{}", err),
-            RingBufError::StridedError(err) => write!(f, "{}", err),
+            CBufError::StorageError(err) => write!(f, "{}", err),
+            CBufError::StridedError(err) => write!(f, "{}", err),
         }
     }
 }
 
-impl core::error::Error for RingBufError {
+impl core::error::Error for CBufError {
     fn source(&self) -> Option<&(dyn core::error::Error + 'static)> {
         match self {
-            RingBufError::StorageError(err) => Some(err),
-            RingBufError::StridedError(err) => Some(err),
+            CBufError::StorageError(err) => Some(err),
+            CBufError::StridedError(err) => Some(err),
             _ => None,
         }
     }
 }
 
-/// Specialized Result type for ring buffer operations.
-pub type Result<T> = core::result::Result<T, RingBufError>;
+/// Specialized CBufResult type for ring buffer operations.
+pub type CBufResult<T> = core::result::Result<T, CBufError>;
 
 #[cfg(test)]
 mod tests {
@@ -147,7 +147,7 @@ mod tests {
     #[test]
     fn test_error_display() {
         use core::fmt::Write;
-        let err = RingBufError::CapacityZero;
+        let err = CBufError::CapacityZero;
         let mut buf = DummyBuf([0; 64], 0);
         write!(buf, "{}", err).unwrap();
         assert!(buf.1 > 0);
@@ -166,17 +166,17 @@ mod tests {
             Err(strided_mem::StridedError::ZeroStride)
         }
 
-        fn upper_op_storage() -> Result<()> {
+        fn upper_op_storage() -> CBufResult<()> {
             lower_storage_op()?;
             Ok(())
         }
 
-        fn upper_op_strided() -> Result<()> {
+        fn upper_op_strided() -> CBufResult<()> {
             lower_strided_op()?;
             Ok(())
         }
 
-        assert!(matches!(upper_op_storage(), Err(RingBufError::StorageError(_))));
-        assert!(matches!(upper_op_strided(), Err(RingBufError::StridedError(strided_mem::StridedError::ZeroStride))));
+        assert!(matches!(upper_op_storage(), Err(CBufError::StorageError(_))));
+        assert!(matches!(upper_op_strided(), Err(CBufError::StridedError(strided_mem::StridedError::ZeroStride))));
     }
 }

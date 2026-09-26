@@ -4,6 +4,7 @@ use raw_storage::{Storage, StorageMut};
 
 use crate::iter::{StridedIter, StridedIterMut};
 use crate::pointer::offset_ptr;
+use crate::traits::{View, ViewMut};
 
 /// An immutable view over elements spaced by a constant stride.
 #[derive(Debug)]
@@ -297,6 +298,53 @@ impl<'a, T> StridedViewMut<'a, T> {
     #[inline]
     pub fn iter_mut(&mut self) -> StridedIterMut<'_, T> {
         StridedIterMut::new(self.ptr, self.stride, self.len)
+    }
+}
+
+impl<'a, T> View<'a> for StridedView<'a, T> {
+    type Item = T;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    #[inline(always)]
+    fn get(&self, index: usize) -> Option<&'a T> {
+        if index >= self.len {
+            return None;
+        }
+        unsafe {
+            let elem_ptr = offset_ptr(self.ptr, self.stride, index);
+            Some(&*elem_ptr.as_ptr())
+        }
+    }
+}
+
+impl<'a, T> View<'a> for StridedViewMut<'a, T> {
+    type Item = T;
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    #[inline(always)]
+    fn get(&self, index: usize) -> Option<&'a T> {
+        if index >= self.len {
+            return None;
+        }
+        unsafe {
+            let elem_ptr = offset_ptr(self.ptr, self.stride, index);
+            Some(&*elem_ptr.as_ptr())
+        }
+    }
+}
+
+impl<'a, T> ViewMut<'a> for StridedViewMut<'a, T> {
+    #[inline(always)]
+    fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+        self.get_mut(index)
     }
 }
 
