@@ -1,0 +1,18 @@
+id: PLAT-001
+title: no_std по умолчанию
+status: active
+hard: true
+layer: platform
+
+rule: >
+  Все крейты компилируются без стандартной библиотеки
+  по умолчанию. Зависимость от аллокатора — только за
+  feature-флагом (например, "alloc").
+
+  Запрещено использовать типы из std (Vec, String, Box)
+  вне модулей, защищённых feature-флагом.
+
+enforcement:
+  - cargo check --no-default-features проходит
+  - Рецензент: проверка отсутствия импортов из std
+    в коде без cfg(feature = "alloc")
