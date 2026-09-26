@@ -47,7 +47,7 @@ approved_by: null
 - **SAF-002** — Гарантия непересечения изменяемых представлений.
 - **SEM-001** — Обратная нумерация элементов (индекс 0 — самый новый элемент).
 - **SEM-002** — Закольцованность и тотальность доступа без Option/Result/паник в горячих путях.
-- **SEM-003** — Все трейты generic по типу элементов `<T>`.
+- **SEM-003** — Все трейты generic по типу элементов или содержат ассоциированный тип `Item`.
 - **STRUCT-001** — Все определения трейтов находятся исключительно в модулях `src/traits.rs`.
 
 ---
@@ -165,10 +165,13 @@ pub trait ResizableStorage: StorageMut {
 ### 6.2. `strided-mem/src/traits.rs`
 
 ```rust
-/// Базовый контракт неизменяемого представления над элементами типа `T`.
+/// Базовый контракт неизменяемого представления над элементами типа `Item`.
 /// Представления задают геометрию доступа, не владея памятью.
 /// Затрагиваемые ограничения: ARCH-001, ARCH-002, SEM-001, SEM-002, SEM-003, STRUCT-001.
-pub trait View<'a, T: 'a> {
+pub trait View<'a> {
+    /// Тип элементов, доступных через данный view.
+    type Item: 'a;
+
     /// Возвращает логическое количество элементов, доступных через представление.
     #[requires(true)]
     #[ensures(true)]
@@ -184,62 +187,62 @@ pub trait View<'a, T: 'a> {
     /// Безопасный доступ к элементу по логическому индексу (с проверкой границ).
     #[requires(true)]
     #[ensures(match result { Some(_) => index < self.len(), None => index >= self.len() })]
-    fn get(&self, index: usize) -> Option<&'a T>;
+    fn get(&self, index: usize) -> Option<&'a Self::Item>;
 
-    /// Относительный доступ по знаковому индексу (`rel >= 0` от начала/головы, `rel < 0` от хвоста/старого).
+    /// Относительный доступ по знаковому индексу (`rel >= 0` от головы/нового, `rel < 0` от хвоста/старого).
     #[requires(true)]
     #[ensures(true)]
-    fn get_rel(&self, rel: isize) -> Option<&'a T>;
+    fn get_rel(&self, rel: isize) -> Option<&'a Self::Item>;
 
     /// Закольцованный доступ с автоматическим приведением индекса по модулю.
     /// Тотальная функция для непустых представлений (класс: hot-total).
     #[requires(self.len() > 0)]
     #[ensures(true)]
-    fn get_wrapping(&self, rel: isize) -> &'a T;
+    fn get_wrapping(&self, rel: isize) -> &'a Self::Item;
 }
 
-/// Контракт мутабельного представления над элементами типа `T`.
+/// Контракт мутабельного представления.
 /// Затрагиваемые ограничения: ARCH-001, ARCH-002, SAF-002, SEM-001, SEM-002, SEM-003, STRUCT-001.
-pub trait ViewMut<'a, T: 'a>: View<'a, T> {
+pub trait ViewMut<'a>: View<'a> {
     /// Мутабельный доступ к элементу по логическому индексу с проверкой границ.
     #[requires(true)]
     #[ensures(match result { Some(_) => index < self.len(), None => index >= self.len() })]
-    fn get_mut(&mut self, index: usize) -> Option<&mut T>;
+    fn get_mut(&mut self, index: usize) -> Option<&mut Self::Item>;
 
     /// Мутабельный относительный доступ по знаковому индексу.
     #[requires(true)]
     #[ensures(true)]
-    fn get_rel_mut(&mut self, rel: isize) -> Option<&mut T>;
+    fn get_rel_mut(&mut self, rel: isize) -> Option<&mut Self::Item>;
 
     /// Мутабельный закольцованный доступ с приведением индекса по модулю (класс: hot-total).
     #[requires(self.len() > 0)]
     #[ensures(true)]
-    fn get_wrapping_mut(&mut self, rel: isize) -> &mut T;
+    fn get_wrapping_mut(&mut self, rel: isize) -> &mut Self::Item;
 }
 
 /// Представление, данные которого лежат в не более чем двух непрерывных срезах памяти.
 /// Затрагиваемые ограничения: ARCH-001, PLAT-001, STRUCT-001.
-pub trait ContiguousView<'a, T: 'a>: View<'a, T> {
+pub trait ContiguousView<'a>: View<'a> {
     /// Возвращает доступные элементы как пару непрерывных срезов.
     #[requires(true)]
     #[ensures(result.0.len() + result.1.len() == self.len())]
-    fn as_slices(&self) -> (&'a [T], &'a [T]);
+    fn as_slices(&self) -> (&'a [Self::Item], &'a [Self::Item]);
 }
 
 /// Мутабельный аналог `ContiguousView`.
 /// Затрагиваемые ограничения: ARCH-001, SAF-002, STRUCT-001.
-pub trait ContiguousViewMut<'a, T: 'a>: ViewMut<'a, T> + ContiguousView<'a, T> {
+pub trait ContiguousViewMut<'a>: ViewMut<'a> + ContiguousView<'a> {
     /// Возвращает доступные элементы как пару мутабельных непрерывных срезов.
     #[requires(true)]
     #[ensures(result.0.len() + result.1.len() == self.len())]
-    fn as_slices_mut(&mut self) -> (&'a mut [T], &'a mut [T]);
+    fn as_slices_mut(&mut self) -> (&'a mut [Self::Item], &'a mut [Self::Item]);
 }
 
 /// Контракт композиции представлений (обёртка над внутренним источником/представлением).
 /// Затрагиваемые ограничения: ARCH-002, STRUCT-001.
-pub trait ViewCompose<T> {
+pub trait ViewCompose<'a>: View<'a> {
     /// Тип внутреннего источника данных или вложенного представления.
-    type Source;
+    type Source: View<'a, Item = Self::Item>;
 
     /// Возвращает ссылку на внутренний источник.
     #[requires(true)]
@@ -249,7 +252,10 @@ pub trait ViewCompose<T> {
 
 /// Мутабельный аналог `ViewCompose`.
 /// Затрагиваемые ограничения: ARCH-002, SAF-002, STRUCT-001.
-pub trait ViewComposeMut<T>: ViewCompose<T> {
+pub trait ViewComposeMut<'a>: ViewCompose<'a> + ViewMut<'a>
+where
+    Self::Source: ViewMut<'a, Item = Self::Item>,
+{
     /// Возвращает мутабельную ссылку на внутренний источник.
     #[requires(true)]
     #[ensures(true)]
@@ -267,7 +273,7 @@ pub trait StridedAccess {
 
 /// Контракт для представлений с динамически изменяемой эффективной длиной (хвосты).
 /// Затрагиваемые ограничения: ARCH-001, STRUCT-001.
-pub trait ResizableView {
+pub trait ResizableView<'a>: View<'a> {
     /// Возвращает текущую видимую (эффективную) длину представления.
     #[requires(true)]
     #[ensures(result <= self.capacity())]
@@ -286,7 +292,10 @@ pub trait ResizableView {
 
 /// Контракт многоканального представления (стеки буферов).
 /// Затрагиваемые ограничения: ARCH-001, ARCH-002, SEM-003, STRUCT-001.
-pub trait MultiChannelView<'a, T: 'a> {
+pub trait MultiChannelView<'a> {
+    /// Тип элементов в каналах.
+    type Item: 'a;
+
     /// Возвращает количество каналов.
     #[requires(true)]
     #[ensures(true)]
@@ -300,26 +309,26 @@ pub trait MultiChannelView<'a, T: 'a> {
     /// Возвращает ссылку на элемент канала `channel` по логическому индексу `index`.
     #[requires(channel < self.channels())]
     #[ensures(match result { Some(_) => index < self.channel_len(), None => index >= self.channel_len() })]
-    fn get_channel(&self, channel: usize, index: usize) -> Option<&'a T>;
+    fn get_channel(&self, channel: usize, index: usize) -> Option<&'a Self::Item>;
 
     /// Закольцованный доступ к элементу канала `channel` по относительному индексу `rel` (класс: hot-total).
     #[requires(channel < self.channels() && self.channel_len() > 0)]
     #[ensures(true)]
-    fn get_channel_wrapping(&self, channel: usize, rel: isize) -> &'a T;
+    fn get_channel_wrapping(&self, channel: usize, rel: isize) -> &'a Self::Item;
 }
 
 /// Мутабельный аналог `MultiChannelView`.
 /// Затрагиваемые ограничения: ARCH-001, ARCH-002, SAF-002, STRUCT-001.
-pub trait MultiChannelViewMut<'a, T: 'a>: MultiChannelView<'a, T> {
+pub trait MultiChannelViewMut<'a>: MultiChannelView<'a> {
     /// Мутабельный доступ к элементу канала `channel` по логическому индексу `index`.
     #[requires(channel < self.channels())]
     #[ensures(match result { Some(_) => index < self.channel_len(), None => index >= self.channel_len() })]
-    fn get_channel_mut(&mut self, channel: usize, index: usize) -> Option<&mut T>;
+    fn get_channel_mut(&mut self, channel: usize, index: usize) -> Option<&mut Self::Item>;
 
     /// Мутабельный закольцованный доступ к элементу канала `channel` (класс: hot-total).
     #[requires(channel < self.channels() && self.channel_len() > 0)]
     #[ensures(true)]
-    fn get_channel_wrapping_mut(&mut self, channel: usize, rel: isize) -> &mut T;
+    fn get_channel_wrapping_mut(&mut self, channel: usize, rel: isize) -> &mut Self::Item;
 }
 ```
 
